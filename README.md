@@ -2,7 +2,7 @@
 
 Real-time Computer Vision & Edge AI Ingestion Server for Pedestrian Crowd Density Intelligence.
 
-Part of the **Vigilo** intelligent crowd flow architecture. Pairs with [`vigilo-user-interface`](https://github.com/kodo-kaze/vigilo).
+Part of the **Vigilo** intelligent crowd flow architecture. Pairs with [`vigilo-user-interface`](https://github.com/kodo-kaze/vigilo-user-interface).
 
 ## Features
 - **YOLO Person Detection**: High-performance bounding box tracking (`model/best.pt`).
