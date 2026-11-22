@@ -1,0 +1,14 @@
+services:
+  vigilo-edge-api:
+    build: .
+    container_name: vigilo-edge-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CROWD_STREAM_SOURCE=0
+      - CAMERA_ZONE=Terminal Concourse 04 • Zone B
+      - ENABLE_HEATMAP=true
+      - ENABLE_CLUSTERS=true
+    # devices:
+    #   - /dev/video0:/dev/video0
