@@ -1182,7 +1182,7 @@
                 </div>
               </div>
               <div class="card-badges">
-                <div class="badge-status ${cam.active ? (cam.is_crowd ? 'surge' : 'online') : 'standby'}" id="status-badge-${cam.id}">
+                <div class="badge-status ${cam.active ? (cam.camera_connected ? (cam.is_crowd ? 'surge' : 'online') : 'offline') : 'standby'}" id="status-badge-${cam.id}">
                   ● ${cam.status}
                 </div>
                 <div class="badge-public ${cam.approved_for_public ? 'approved' : 'internal'}" id="public-badge-${cam.id}">
@@ -1233,7 +1233,13 @@
           document.getElementById(`coord-${cam.id}`).innerText = `📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})`;
           
           const badge = document.getElementById(`status-badge-${cam.id}`);
-          badge.className = `badge-status ${cam.active ? (cam.is_crowd || cam.dense_clusters_count > 0 ? 'surge' : 'online') : 'standby'}`;
+          const wasOffline = badge.innerText.includes("OFFLINE");
+          const isNowOnline = cam.active && cam.camera_connected;
+          if (wasOffline && isNowOnline) {
+            const img = document.getElementById(`stream-img-${cam.id}`);
+            if (img) img.src = `/api/cameras/${cam.id}/stream?t=${Date.now()}`;
+          }
+          badge.className = `badge-status ${cam.active ? (cam.camera_connected ? (cam.is_crowd || cam.dense_clusters_count > 0 ? 'surge' : 'online') : 'offline') : 'standby'}`;
           badge.innerText = `● ${cam.status}`;
 
           const pubBadge = document.getElementById(`public-badge-${cam.id}`);

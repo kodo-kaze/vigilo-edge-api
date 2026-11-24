@@ -1,1 +1,44 @@
-[]
+[
+  {
+    "id": "ph-1",
+    "name": "ph-1",
+    "source": "http://192.168.29.193:8080/video",
+    "zone": "p1",
+    "coordinates": {
+      "floor": "Level 1 - Concourse",
+      "x": 150,
+      "y": 300,
+      "z": 0
+    },
+    "active": true,
+    "approved_for_public": false,
+    "show_heatmap": true,
+    "show_clusters": false,
+    "conf": 0.25,
+    "iou": 0.7,
+    "stride": 1,
+    "smooth": 10,
+    "created_at": "2026-11-24T12:50:08Z"
+  },
+  {
+    "id": "ph-2",
+    "name": "ph-2",
+    "source": "https://192.168.29.27:8080/live",
+    "zone": "p1",
+    "coordinates": {
+      "floor": "Level 1 - Concourse",
+      "x": 150,
+      "y": 300,
+      "z": 0
+    },
+    "active": true,
+    "approved_for_public": false,
+    "show_heatmap": true,
+    "show_clusters": true,
+    "conf": 0.25,
+    "iou": 0.7,
+    "stride": 1,
+    "smooth": 10,
+    "created_at": "2026-11-24T12:57:40Z"
+  }
+]
