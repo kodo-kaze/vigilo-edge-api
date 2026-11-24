@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vigilo Edge Server — Station Control Center</title>
+  <style>
+    :root {
+      --bg-base: #070a10;
+      --bg-card: rgba(16, 24, 40, 0.75);
+      --bg-card-hover: rgba(22, 33, 56, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(0, 229, 255, 0.35);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --cyan: #00e5ff;
+      --cyan-glow: rgba(0, 229, 255, 0.25);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.25);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.25);
+      --crimson: #ef4444;
+      --crimson-glow: rgba(239, 68, 68, 0.35);
+      --slate: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.4;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 229, 255, 0.03) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(16, 185, 129, 0.02) 0%, transparent 40%);
+    }
+
+    /* TOP HEADER */
+    header {
+      background: rgba(11, 17, 30, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #00e5ff 0%, #3b82f6 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      color: #070a10;
+      font-size: 20px;
+      box-shadow: 0 0 16px var(--cyan-glow);
+    }
+
+    .brand-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .station-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .station-badge .dot {
+      width: 6px;
+      height: 6px;
+      background-color: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+      animation: pulse-dot 2s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(59, 130, 246, 0.2));
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.3), rgba(59, 130, 246, 0.3));
+      box-shadow: 0 0 14px var(--cyan-glow);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #f87171;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .grid-toggle-group {
+      display: flex;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .grid-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .grid-btn.active {
+      background: rgba(0, 229, 255, 0.15);
+      color: var(--cyan);
+    }
+
+    /* MAIN CONTAINER */
+    main {
+      padding: 24px;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    /* SURGE ALERT TICKER */
+    .surge-banner {
+      display: none;
+      background: linear-gradient(90deg, rgba(239, 68, 68, 0.25), rgba(245, 158, 11, 0.25));
+      border: 1px solid rgba(239, 68, 68, 0.6);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      animation: alert-pulse 2s infinite ease-in-out;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+    }
+
+    @keyframes alert-pulse {
+      0%, 100% { border-color: rgba(239, 68, 68, 0.6); }
+      50% { border-color: rgba(245, 158, 11, 0.9); }
+    }
+
+    .surge-banner-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .surge-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .surge-icon {
+      font-size: 22px;
+      animation: shake 1s infinite alternate;
+    }
+
+    @keyframes shake {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.15); }
+    }
+
+    .surge-title {
+      font-weight: 700;
+      color: #fca5a5;
+      font-size: 15px;
+    }
+
+    .surge-desc {
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+
+    /* STATION TELEMETRY CARDS */
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .telemetry-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 16px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .telemetry-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
+    }
+
+    .telemetry-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .telemetry-value {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .telemetry-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* SECTION HEADER */
+    .section-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* MULTI-CAMERA MATRIX */
+    .camera-matrix {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+      transition: all 0.3s ease;
+    }
+
+    .camera-matrix.grid-1 {
+      grid-template-columns: 1fr;
+    }
+
+    .camera-matrix.grid-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .camera-matrix.grid-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .camera-matrix.grid-4 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    @media (max-width: 1024px) {
+      .camera-matrix {
+        grid-template-columns: 1fr !important;
+      }
+    }
+
+    /* CAMERA CARD */
+    .camera-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .camera-card:hover {
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .camera-card.alert-active {
+      border-color: rgba(239, 68, 68, 0.6);
+      box-shadow: 0 0 24px rgba(239, 68, 68, 0.25);
+    }
+
+    /* CARD HEADER */
+    .card-header {
+      padding: 12px 16px;
+      background: rgba(15, 23, 42, 0.7);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .card-title-group {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-zone {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .card-coord {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-top: 4px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+
+    .card-badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .badge-status {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .badge-status.online {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    .badge-status.standby {
+      background: rgba(100, 116, 139, 0.15);
+      border: 1px solid rgba(100, 116, 139, 0.4);
+      color: #94a3b8;
+    }
+
+    .badge-status.surge {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.6);
+      color: #f87171;
+      animation: alert-pulse 1.5s infinite;
+    }
+
+    .badge-status.offline {
+      background: rgba(71, 85, 105, 0.2);
+      border: 1px solid rgba(71, 85, 105, 0.4);
+      color: #64748b;
+    }
+
+    .badge-public {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-public.approved {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+
+    .badge-public.internal {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fbbf24;
+    }
+
+    /* VIDEO STREAM CONTAINER */
+    .stream-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #030712;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .stream-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* HUD OVERLAY ON STREAM */
+    .stream-hud {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .hud-pill {
+      background: rgba(7, 10, 16, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      color: #e2e8f0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hud-people {
+      color: var(--cyan);
+      font-weight: 700;
+    }
+
+    /* CARD ACTION CONTROLS */
+    .card-actions {
+      padding: 10px 14px;
+      background: rgba(11, 17, 30, 0.9);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 11px;
+      border-radius: 6px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-sm:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-sm.active {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: rgba(0, 229, 255, 0.4);
+      color: var(--cyan);
+    }
+
+    .btn-sm.active-green {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    /* MODAL */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.85);
+      backdrop-filter: blur(12px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-box {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+      animation: modal-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modal-pop {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .modal-body {
+      padding: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan-glow);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+
+    .form-checkbox {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--cyan);
+      cursor: pointer;
+    }
+
+    .form-checkbox-label {
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* PRESET PILLS */
+    .preset-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .preset-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .preset-pill:hover {
+      background: rgba(0, 229, 255, 0.1);
+      border-color: rgba(0, 229, 255, 0.3);
+      color: var(--cyan);
+    }
+
+    /* FOCUS MODAL EXPANDED VIEW */
+    .focus-modal-box {
+      max-width: 1100px;
+    }
+
+    .focus-grid {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 800px) {
+      .focus-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .focus-video-wrap {
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .telemetry-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .telemetry-table tr {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .telemetry-table td {
+      padding: 8px 6px;
+    }
+
+    .telemetry-table td:first-child {
+      color: var(--text-muted);
+    }
+
+    .telemetry-table td:last-child {
+      text-align: right;
+      font-family: ui-monospace, monospace;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+
+    /* TOAST */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f172a;
+      border: 1px solid var(--border-subtle);
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 300;
+      display: none;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-logo">V</div>
+      <div>
+        <div class="brand-title">
+          Vigilo Edge Server
+          <span class="station-badge">
+            <span class="dot"></span>
+            LOCAL ON-PREM BRAIN
+          </span>
+        </div>
+        <div class="brand-subtitle" id="station-name-label">Station Operations Control Room</div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="grid-toggle-group">
+        <button class="grid-btn" onclick="setGrid(1)">1x1</button>
+        <button class="grid-btn active" id="btn-grid-2" onclick="setGrid(2)">2x2</button>
+        <button class="grid-btn" id="btn-grid-3" onclick="setGrid(3)">3x3</button>
+        <button class="grid-btn" id="btn-grid-4" onclick="setGrid(4)">Auto</button>
+      </div>
+      <button class="btn btn-primary" onclick="openRegisterModal()">
+        <span>+</span> Register Camera
+      </button>
+      <button class="btn" onclick="refreshStreams()">
+        <span>🔄</span> Reload
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+    <!-- SURGE WARNING TICKER -->
+    <div id="surge-banner" class="surge-banner">
+      <div class="surge-banner-content">
+        <div class="surge-banner-left">
+          <div class="surge-icon">⚠️</div>
+          <div>
+            <div class="surge-title" id="surge-title">ACTIVE CROWD SURGE ALERT</div>
+            <div class="surge-desc" id="surge-desc">Elevated crowd density and spatial compression detected.</div>
+          </div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="jumpToSurgeCamera()">Focus Alert Feed</button>
+      </div>
+    </div>
+
+    <!-- AGGREGATE TELEMETRY CARDS -->
+    <div class="telemetry-grid">
+      <div class="telemetry-card">
+        <div class="telemetry-label">Active Feeds</div>
+        <div class="telemetry-value">
+          <span id="metric-active-cams">0</span>
+          <span style="font-size: 16px; color: var(--text-muted);">/ <span id="metric-total-cams">0</span></span>
+        </div>
+        <div class="telemetry-sub" id="metric-standby-sub">0 Feeds Standby</div>
+      </div>
+
+      <div class="telemetry-card">
+        <div class="telemetry-label">Total Pedestrians</div>
+        <div class="telemetry-value" id="metric-total-people" style="color: var(--cyan);">0</div>
+        <div class="telemetry-sub">Live scene headcount</div>
+      </div>
+
+      <div class="telemetry-card">
+        <div class="telemetry-label">Surge Warnings</div>
+        <div class="telemetry-value" id="metric-surge-alerts" style="color: #34d399;">0</div>
+        <div class="telemetry-sub" id="metric-surge-sub">All corridors normal</div>
+      </div>
+
+      <div class="telemetry-card">
+        <div class="telemetry-label">Peak Chokepoint</div>
+        <div class="telemetry-value" style="font-size: 18px; margin-top: 6px;" id="metric-peak-zone">Normal</div>
+        <div class="telemetry-sub" id="metric-peak-density">0.0 / Megapixel</div>
+      </div>
+
+      <div class="telemetry-card">
+        <div class="telemetry-label">Public Broadcast</div>
+        <div class="telemetry-value">
+          <span id="metric-public-cams">0</span>
+          <span style="font-size: 16px; color: var(--text-muted);">Approved</span>
+        </div>
+        <div class="telemetry-sub">Control-Room Approved</div>
+      </div>
+    </div>
+
+    <!-- SECTION TITLE -->
+    <div class="section-bar">
+      <div class="section-title">
+        <span>📹</span> Station Multi-Camera Grid
+      </div>
+      <div style="font-size: 12px; color: var(--text-muted);">
+        Real-time multi-stream inference • Neural Ground Thermal Heatmaps & Spatial Clusters
+      </div>
+    </div>
+
+    <!-- CAMERA MATRIX CONTAINER -->
+    <div id="camera-matrix" class="camera-matrix grid-2">
+      <!-- Populated dynamically via JS -->
+    </div>
+  </main>
+
+  <!-- REGISTER CAMERA MODAL -->
+  <div id="register-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Register CCTV Camera Feed</div>
+        <button class="modal-close" onclick="closeRegisterModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Quick Presets</label>
+          <div class="preset-pills">
+            <button class="preset-pill" onclick="applyPreset('webcam')">Optical Sensor (Webcam 0)</button>
+            <button class="preset-pill" onclick="applyPreset('concourse')">Concourse Turnstiles</button>
+            <button class="preset-pill" onclick="applyPreset('escalator')">Escalator Chokepoint</button>
+            <button class="preset-pill" onclick="applyPreset('platform')">Platform 2 Boarding</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Camera Identifier</label>
+            <input type="text" id="reg-id" class="form-input" placeholder="e.g. cam-platform-4" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input type="text" id="reg-name" class="form-input" placeholder="e.g. Platform 4 — North Stairs" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Video Stream Source (RTSP / HTTP / Device / File)</label>
+          <input type="text" id="reg-source" class="form-input" placeholder="rtsp://192.168.1.104:554/live or 0 for webcam" required />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Facility Zone / Area Description</label>
+          <input type="text" id="reg-zone" class="form-input" placeholder="e.g. Platform 4 • Sector North" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Physical Floor / Level</label>
+            <select id="reg-floor" class="form-select">
+              <option value="Level 1 - Concourse">Level 1 - Concourse</option>
+              <option value="Mezzanine Level">Mezzanine Level</option>
+              <option value="Platform Level">Platform Level</option>
+              <option value="Control Center Level 2">Control Center Level 2</option>
+              <option value="Subway Underpass">Subway Underpass</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Coordinates (X, Y in meters)</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="reg-x" class="form-input" placeholder="X: 150" value="150" />
+              <input type="number" id="reg-y" class="form-input" placeholder="Y: 300" value="300" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 12px;">
+          <label class="form-checkbox-group">
+            <input type="checkbox" id="reg-active" class="form-checkbox" checked />
+            <span class="form-checkbox-label">Start streaming immediately (Active ingestion)</span>
+          </label>
+          <label class="form-checkbox-group">
+            <input type="checkbox" id="reg-public" class="form-checkbox" />
+            <span class="form-checkbox-label">Approve feed for Public Station Visibility</span>
+          </label>
+          <label class="form-checkbox-group">
+            <input type="checkbox" id="reg-heatmap" class="form-checkbox" checked />
+            <span class="form-checkbox-label">Enable Ground Thermal Density Heatmap</span>
+          </label>
+          <label class="form-checkbox-group">
+            <input type="checkbox" id="reg-clusters" class="form-checkbox" checked />
+            <span class="form-checkbox-label">Enable Spatial Cluster Convex Hulls</span>
+          </label>
+        </div>
+
+        <!-- QUICK TCP REACHABILITY TEST -->
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="test-ip" class="form-input" style="flex: 2;" placeholder="IP Host (e.g. 192.168.1.100)" />
+            <input type="number" id="test-port" class="form-input" style="flex: 1;" placeholder="Port" value="554" />
+            <button type="button" class="btn btn-sm" onclick="testConnection()">Test Ping</button>
+          </div>
+          <div id="test-result" style="font-size: 11px; margin-top: 6px; font-family: ui-monospace, monospace;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeRegisterModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRegisterCamera()">Save & Register Camera</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAMERA FOCUS & 21-FEATURE TELEMETRY MODAL -->
+  <div id="focus-modal" class="modal-backdrop">
+    <div class="modal-box focus-modal-box">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="focus-title">Camera Feed Detail</div>
+          <div style="font-size: 11px; color: var(--text-muted);" id="focus-subtitle"></div>
+        </div>
+        <button class="modal-close" onclick="closeFocusModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="focus-grid">
+          <div>
+            <div class="focus-video-wrap">
+              <img id="focus-stream-img" src="" style="width: 100%; height: 100%; object-fit: contain;" />
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+              <button class="btn btn-sm" id="focus-toggle-power" onclick="focusTogglePower()">Standby / Active</button>
+              <button class="btn btn-sm" id="focus-toggle-public" onclick="focusTogglePublic()">Toggle Public Approval</button>
+              <button class="btn btn-sm" id="focus-toggle-heatmap" onclick="focusToggleOption('heatmap')">🔥 Heatmap</button>
+              <button class="btn btn-sm" id="focus-toggle-clusters" onclick="focusToggleOption('clusters')">⬡ Clusters</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+              Scene Intelligence & Telemetry
+            </div>
+            <table class="telemetry-table">
+              <tbody>
+                <tr><td>Status</td><td id="f-status">-</td></tr>
+                <tr><td>Pedestrian Count</td><td id="f-people">-</td></tr>
+                <tr><td>People / Megapixel</td><td id="f-density">-</td></tr>
+                <tr><td>Avg Nearest Neighbor Dist</td><td id="f-nn-dist">-</td></tr>
+                <tr><td>Dense Clusters (&ge;6)</td><td id="f-dense-clusters">-</td></tr>
+                <tr><td>Abnormal Gatherings (3-5)</td><td id="f-gatherings">-</td></tr>
+                <tr><td>Surge Risk Probability</td><td id="f-surge-prob">-</td></tr>
+                <tr><td>Camera Resolution</td><td id="f-res">-</td></tr>
+                <tr><td>Inference FPS</td><td id="f-fps">-</td></tr>
+                <tr><td>Hardware Capture FPS</td><td id="f-cap-fps">-</td></tr>
+                <tr><td>Physical Floor</td><td id="f-floor">-</td></tr>
+                <tr><td>Physical Grid (X, Y)</td><td id="f-coord">-</td></tr>
+                <tr><td>Public Broadcast</td><td id="f-public">-</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast"></div>
+
+  <script>
+    // State
+    let cameras = [];
+    let overview = {};
+    let activeSurgeCams = [];
+    let currentFocusCameraId = null;
+
+    // Toast message
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      t.innerText = msg;
+      t.style.display = "block";
+      setTimeout(() => { t.style.display = "none"; }, 3000);
+    }
+
+    // Set grid layout class
+    function setGrid(cols) {
+      const matrix = document.getElementById("camera-matrix");
+      matrix.className = `camera-matrix grid-${cols}`;
+      document.querySelectorAll(".grid-btn").forEach(b => b.classList.remove("active"));
+      const btn = document.getElementById(`btn-grid-${cols}`);
+      if (btn) btn.classList.add("active");
+    }
+
+    // Fetch station overview & camera list
+    async function fetchState() {
+      try {
+        const [ovRes, camRes] = await Promise.all([
+          fetch("/api/overview"),
+          fetch("/api/cameras")
+        ]);
+
+        if (ovRes.ok) {
+          overview = await ovRes.json();
+          updateOverviewUI();
+        }
+
+        if (camRes.ok) {
+          cameras = await camRes.json();
+          updateCamerasUI();
+        }
+      } catch (err) {
+        console.error("Telemetry fetch error:", err);
+      }
+    }
+
+    // Update Station Overview Numbers
+    function updateOverviewUI() {
+      if (!overview) return;
+
+      document.getElementById("station-name-label").innerText = overview.station_name || "Station Operations Control Room";
+      document.getElementById("metric-active-cams").innerText = overview.active_cameras || 0;
+      document.getElementById("metric-total-cams").innerText = overview.total_cameras || 0;
+      document.getElementById("metric-standby-sub").innerText = `${overview.standby_cameras || 0} Feeds Standby`;
+      document.getElementById("metric-total-people").innerText = overview.total_people_detected || 0;
+      document.getElementById("metric-public-cams").innerText = overview.approved_public_cameras || 0;
+
+      const surgeCnt = overview.active_surge_alerts_count || 0;
+      const surgeElem = document.getElementById("metric-surge-alerts");
+      const surgeSub = document.getElementById("metric-surge-sub");
+      const banner = document.getElementById("surge-banner");
+
+      surgeElem.innerText = surgeCnt;
+      if (surgeCnt > 0) {
+        surgeElem.style.color = "var(--crimson)";
+        surgeSub.innerText = `${surgeCnt} Corridors Under Surge`;
+        banner.style.display = "block";
+        const firstAlert = overview.surge_alerts ? overview.surge_alerts[0] : null;
+        if (firstAlert) {
+          document.getElementById("surge-title").innerText = `SURGE ALERT: ${firstAlert.zone}`;
+          document.getElementById("surge-desc").innerText = `${firstAlert.message} • ${firstAlert.people_count} pedestrians (${firstAlert.density_per_megapixel}/MP)`;
+          activeSurgeCams = overview.surge_alerts.map(a => a.camera_id);
+        }
+      } else {
+        surgeElem.style.color = "#34d399";
+        surgeSub.innerText = "All corridors normal";
+        banner.style.display = "none";
+        activeSurgeCams = [];
+      }
+
+      document.getElementById("metric-peak-zone").innerText = overview.highest_density_zone || "Normal";
+      document.getElementById("metric-peak-density").innerText = `${overview.max_density_per_megapixel || 0.0} / Megapixel`;
+    }
+
+    // Update or construct camera cards in DOM
+    function updateCamerasUI() {
+      const container = document.getElementById("camera-matrix");
+
+      if (!cameras || cameras.length === 0) {
+        container.innerHTML = `
+          <div style="grid-column: 1 / -1; background: var(--bg-card); border: 1px dashed var(--border-subtle); border-radius: 16px; padding: 60px 20px; text-align: center;">
+            <div style="font-size: 40px; margin-bottom: 16px;">📹</div>
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Edge Server Idle — No Cameras Registered</div>
+            <div style="font-size: 13px; color: var(--text-muted); max-width: 500px; margin: 0 auto 24px auto;">
+              No video feeds are currently being ingested or analyzed. Use the button below to register and connect a CCTV stream.
+            </div>
+            <button class="btn btn-primary" onclick="openRegisterModal()">
+              <span>+</span> Register CCTV Camera
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      // Clear empty state if cameras exist
+      if (container.querySelector("div[style*='grid-column: 1 / -1']")) {
+        container.innerHTML = "";
+      }
+
+      cameras.forEach(cam => {
+        let card = document.getElementById(`cam-card-${cam.id}`);
+
+        if (!card) {
+          // Construct card
+          card = document.createElement("div");
+          card.id = `cam-card-${cam.id}`;
+          card.className = "camera-card";
+          card.innerHTML = `
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">
+                  <span>📹</span> <span id="title-${cam.id}">${cam.name}</span>
+                </div>
+                <div class="card-zone" id="zone-${cam.id}">${cam.zone}</div>
+                <div class="card-coord" id="coord-${cam.id}">
+                  📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})
+                </div>
+              </div>
+              <div class="card-badges">
+                <div class="badge-status ${cam.active ? (cam.is_crowd ? 'surge' : 'online') : 'standby'}" id="status-badge-${cam.id}">
+                  ● ${cam.status}
+                </div>
+                <div class="badge-public ${cam.approved_for_public ? 'approved' : 'internal'}" id="public-badge-${cam.id}">
+                  ${cam.approved_for_public ? 'Public Approved' : 'Internal Only'}
+                </div>
+              </div>
+            </div>
+
+            <div class="stream-viewport">
+              <img id="stream-img-${cam.id}" src="/api/cameras/${cam.id}/stream" class="stream-img" alt="${cam.name}" />
+              <div class="stream-hud">
+                <div class="hud-pill">
+                  <span id="fps-${cam.id}">${cam.fps || 0} FPS</span> • <span id="res-${cam.id}">${cam.resolution || 'Standby'}</span>
+                </div>
+                <div class="hud-pill">
+                  <span class="hud-people" id="people-${cam.id}">👤 ${cam.people_count || 0}</span>
+                  <span id="dense-${cam.id}" style="color: #fca5a5;">(${cam.dense_clusters_count || 0} Clusters)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-actions">
+              <div class="action-group">
+                <button class="btn-sm ${cam.active ? 'active-green' : ''}" id="btn-power-${cam.id}" onclick="toggleCameraPower('${cam.id}')">
+                  ${cam.active ? 'Active' : 'Standby'}
+                </button>
+                <button class="btn-sm ${cam.approved_for_public ? 'active-green' : ''}" id="btn-public-${cam.id}" onclick="toggleCameraPublic('${cam.id}')">
+                  ${cam.approved_for_public ? 'Public' : 'Internal'}
+                </button>
+                <button class="btn-sm ${cam.heatmap_enabled ? 'active' : ''}" id="btn-heat-${cam.id}" onclick="toggleOption('${cam.id}', 'heatmap')">
+                  🔥 Heat
+                </button>
+                <button class="btn-sm ${cam.clusters_enabled ? 'active' : ''}" id="btn-clust-${cam.id}" onclick="toggleOption('${cam.id}', 'clusters')">
+                  ⬡ Hulls
+                </button>
+              </div>
+              <div class="action-group">
+                <button class="btn-sm" onclick="openFocusModal('${cam.id}')">🔍 Focus</button>
+                <button class="btn-sm" style="color: #f87171;" onclick="deleteCamera('${cam.id}')">🗑️</button>
+              </div>
+            </div>
+          `;
+          container.appendChild(card);
+        } else {
+          // Update values in-place without touching <img> source (zero stream flicker!)
+          document.getElementById(`title-${cam.id}`).innerText = cam.name;
+          document.getElementById(`zone-${cam.id}`).innerText = cam.zone;
+          document.getElementById(`coord-${cam.id}`).innerText = `📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})`;
+          
+          const badge = document.getElementById(`status-badge-${cam.id}`);
+          badge.className = `badge-status ${cam.active ? (cam.is_crowd || cam.dense_clusters_count > 0 ? 'surge' : 'online') : 'standby'}`;
+          badge.innerText = `● ${cam.status}`;
+
+          const pubBadge = document.getElementById(`public-badge-${cam.id}`);
+          pubBadge.className = `badge-public ${cam.approved_for_public ? 'approved' : 'internal'}`;
+          pubBadge.innerText = cam.approved_for_public ? 'Public Approved' : 'Internal Only';
+
+          document.getElementById(`fps-${cam.id}`).innerText = `${cam.fps || 0} FPS`;
+          document.getElementById(`res-${cam.id}`).innerText = cam.resolution || 'Standby';
+          document.getElementById(`people-${cam.id}`).innerText = `👤 ${cam.people_count || 0}`;
+          document.getElementById(`dense-${cam.id}`).innerText = `(${cam.dense_clusters_count || 0} Clusters)`;
+
+          const powerBtn = document.getElementById(`btn-power-${cam.id}`);
+          powerBtn.className = `btn-sm ${cam.active ? 'active-green' : ''}`;
+          powerBtn.innerText = cam.active ? 'Active' : 'Standby';
+
+          const pubBtn = document.getElementById(`btn-public-${cam.id}`);
+          pubBtn.className = `btn-sm ${cam.approved_for_public ? 'active-green' : ''}`;
+          pubBtn.innerText = cam.approved_for_public ? 'Public' : 'Internal';
+
+          const heatBtn = document.getElementById(`btn-heat-${cam.id}`);
+          heatBtn.className = `btn-sm ${cam.heatmap_enabled ? 'active' : ''}`;
+
+          const clustBtn = document.getElementById(`btn-clust-${cam.id}`);
+          clustBtn.className = `btn-sm ${cam.clusters_enabled ? 'active' : ''}`;
+
+          if (cam.is_crowd || cam.dense_clusters_count > 0) {
+            card.classList.add("alert-active");
+          } else {
+            card.classList.remove("alert-active");
+          }
+        }
+      });
+
+      // Remove deleted cards
+      const currentIds = new Set(cameras.map(c => c.id));
+      Array.from(container.children).forEach(child => {
+        const id = child.id.replace("cam-card-", "");
+        if (!currentIds.has(id)) {
+          container.removeChild(child);
+        }
+      });
+
+      // Update focus modal if open
+      if (currentFocusCameraId) {
+        updateFocusModalData();
+      }
+    }
+
+    // Toggle camera power (active vs standby)
+    async function toggleCameraPower(id) {
+      try {
+        const res = await fetch(`/api/cameras/${id}/toggle`, { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Camera ${id}: ${data.active ? 'Active Streaming' : 'Standby Mode'}`);
+          fetchState();
+        }
+      } catch (err) {
+        showToast(`Failed to toggle camera: ${err}`);
+      }
+    }
+
+    // Toggle public visibility approval
+    async function toggleCameraPublic(id) {
+      try {
+        const res = await fetch(`/api/cameras/${id}/public`, { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(`Camera ${id}: ${data.approved_for_public ? 'Approved for Public Screen' : 'Internal Control-Room Only'}`);
+          fetchState();
+        }
+      } catch (err) {
+        showToast(`Failed to toggle public visibility: ${err}`);
+      }
+    }
+
+    // Toggle heatmap or clusters
+    async function toggleOption(id, opt) {
+      try {
+        const cam = cameras.find(c => c.id === id);
+        const payload = {};
+        if (opt === "heatmap") payload.heatmap = !cam?.heatmap_enabled;
+        if (opt === "clusters") payload.clusters = !cam?.clusters_enabled;
+
+        const res = await fetch(`/api/cameras/${id}/options`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          showToast(`Updated ${opt} for camera ${id}`);
+          fetchState();
+        }
+      } catch (err) {
+        showToast(`Option error: ${err}`);
+      }
+    }
+
+    // Delete camera
+    async function deleteCamera(id) {
+      if (!confirm(`Are you sure you want to deregister camera ${id}?`)) return;
+      try {
+        const res = await fetch(`/api/cameras/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          showToast(`Deregistered camera ${id}`);
+          fetchState();
+        }
+      } catch (err) {
+        showToast(`Error deleting camera: ${err}`);
+      }
+    }
+
+    // Refresh streams
+    function refreshStreams() {
+      cameras.forEach(cam => {
+        const img = document.getElementById(`stream-img-${cam.id}`);
+        if (img) {
+          img.src = `/api/cameras/${cam.id}/stream?t=${Date.now()}`;
+        }
+      });
+      showToast("Reloaded all MJPEG streams");
+    }
+
+    // Jump to surge alert camera
+    function jumpToSurgeCamera() {
+      if (activeSurgeCams.length > 0) {
+        openFocusModal(activeSurgeCams[0]);
+      }
+    }
+
+    // REGISTER MODAL
+    function openRegisterModal() {
+      document.getElementById("register-modal").style.display = "flex";
+    }
+
+    function closeRegisterModal() {
+      document.getElementById("register-modal").style.display = "none";
+    }
+
+    function applyPreset(preset) {
+      if (preset === "webcam") {
+        document.getElementById("reg-id").value = "cam-optical-usb";
+        document.getElementById("reg-name").value = "Control Room Optical Ingest";
+        document.getElementById("reg-source").value = "0";
+        document.getElementById("reg-zone").value = "Operations Center • Sensor Deck";
+        document.getElementById("reg-floor").value = "Control Center Level 2";
+      } else if (preset === "concourse") {
+        document.getElementById("reg-id").value = "cam-concourse-turnstiles";
+        document.getElementById("reg-name").value = "Concourse Main Turnstiles";
+        document.getElementById("reg-source").value = "rtsp://192.168.1.101:554/live";
+        document.getElementById("reg-zone").value = "Terminal Concourse 04 • Gate South";
+        document.getElementById("reg-floor").value = "Level 1 - Concourse";
+      } else if (preset === "escalator") {
+        document.getElementById("reg-id").value = "cam-escalator-choke";
+        document.getElementById("reg-name").value = "Platform 1 Escalator Chokepoint";
+        document.getElementById("reg-source").value = "rtsp://192.168.1.102:554/live";
+        document.getElementById("reg-zone").value = "Platform 1 • Vertical Escalator Flow";
+        document.getElementById("reg-floor").value = "Mezzanine Level";
+      } else if (preset === "platform") {
+        document.getElementById("reg-id").value = "cam-platform-boarding";
+        document.getElementById("reg-name").value = "Platform 2 Boarding Hall";
+        document.getElementById("reg-source").value = "rtsp://192.168.1.103:554/live";
+        document.getElementById("reg-zone").value = "Platform Hub • Track Sector 3";
+        document.getElementById("reg-floor").value = "Platform Level";
+      }
+    }
+
+    async function testConnection() {
+      const ip = document.getElementById("test-ip").value.trim();
+      const port = parseInt(document.getElementById("test-port").value, 10);
+      const resElem = document.getElementById("test-result");
+
+      if (!ip || isNaN(port)) {
+        resElem.innerText = "Please enter both IP host and port.";
+        resElem.style.color = "#f87171";
+        return;
+      }
+
+      resElem.innerText = "Pinging socket...";
+      resElem.style.color = "var(--text-muted)";
+
+      try {
+        const res = await fetch("/api/cameras/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ip, port })
+        });
+        const data = await res.json();
+        if (data.reachable) {
+          resElem.innerText = `Online: Reached ${ip}:${port} in ${data.latency_ms}ms`;
+          resElem.style.color = "#34d399";
+        } else {
+          resElem.innerText = `Unreachable: ${data.error || 'Connection timed out'}`;
+          resElem.style.color = "#f87171";
+        }
+      } catch (err) {
+        resElem.innerText = `Test failed: ${err}`;
+        resElem.style.color = "#f87171";
+      }
+    }
+
+    async function submitRegisterCamera() {
+      const name = document.getElementById("reg-name").value.trim();
+      const source = document.getElementById("reg-source").value.trim();
+      if (!name || !source) {
+        alert("Please provide both Camera Name and Video Source.");
+        return;
+      }
+
+      const id = document.getElementById("reg-id").value.trim();
+      const zone = document.getElementById("reg-zone").value.trim() || "Station Concourse";
+      const floor = document.getElementById("reg-floor").value;
+      const x = parseFloat(document.getElementById("reg-x").value) || 0;
+      const y = parseFloat(document.getElementById("reg-y").value) || 0;
+      const active = document.getElementById("reg-active").checked;
+      const approved_for_public = document.getElementById("reg-public").checked;
+      const show_heatmap = document.getElementById("reg-heatmap").checked;
+      const show_clusters = document.getElementById("reg-clusters").checked;
+
+      const payload = {
+        name,
+        source,
+        id: id || undefined,
+        zone,
+        coordinates: { floor, x, y, z: 0 },
+        active,
+        approved_for_public,
+        show_heatmap,
+        show_clusters
+      };
+
+      try {
+        const res = await fetch("/api/cameras", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          const created = await res.json();
+          showToast(`Successfully registered ${created.name}`);
+          closeRegisterModal();
+          fetchState();
+        } else {
+          const err = await res.json();
+          alert(`Error registering camera: ${err.error || 'Failed'}`);
+        }
+      } catch (err) {
+        alert(`Request failed: ${err}`);
+      }
+    }
+
+    // FOCUS MODAL
+    function openFocusModal(id) {
+      currentFocusCameraId = id;
+      const cam = cameras.find(c => c.id === id);
+      if (!cam) return;
+
+      document.getElementById("focus-title").innerText = cam.name;
+      document.getElementById("focus-subtitle").innerText = `${cam.zone} • ${cam.source}`;
+      document.getElementById("focus-stream-img").src = `/api/cameras/${id}/stream`;
+      document.getElementById("focus-modal").style.display = "flex";
+      updateFocusModalData();
+    }
+
+    function closeFocusModal() {
+      document.getElementById("focus-modal").style.display = "none";
+      document.getElementById("focus-stream-img").src = "";
+      currentFocusCameraId = null;
+    }
+
+    function updateFocusModalData() {
+      if (!currentFocusCameraId) return;
+      const cam = cameras.find(c => c.id === currentFocusCameraId);
+      if (!cam) return;
+
+      document.getElementById("f-status").innerText = cam.status;
+      document.getElementById("f-people").innerText = cam.people_count;
+      document.getElementById("f-density").innerText = `${cam.density_per_megapixel} / MP`;
+      document.getElementById("f-nn-dist").innerText = cam.nearest_neighbor_distance;
+      document.getElementById("f-dense-clusters").innerText = cam.dense_clusters_count;
+      document.getElementById("f-gatherings").innerText = cam.gatherings_count;
+      document.getElementById("f-surge-prob").innerText = `${Math.round((cam.crowd_probability || 0) * 100)}%`;
+      document.getElementById("f-res").innerText = cam.resolution;
+      document.getElementById("f-fps").innerText = `${cam.fps} FPS`;
+      document.getElementById("f-cap-fps").innerText = `${cam.capture_fps} FPS`;
+      document.getElementById("f-floor").innerText = cam.coordinates?.floor || 'Level 1';
+      document.getElementById("f-coord").innerText = `X: ${cam.coordinates?.x}, Y: ${cam.coordinates?.y}`;
+      document.getElementById("f-public").innerText = cam.approved_for_public ? 'APPROVED' : 'RESTRICTED (Internal)';
+    }
+
+    function focusTogglePower() {
+      if (currentFocusCameraId) toggleCameraPower(currentFocusCameraId);
+    }
+
+    function focusTogglePublic() {
+      if (currentFocusCameraId) toggleCameraPublic(currentFocusCameraId);
+    }
+
+    function focusToggleOption(opt) {
+      if (currentFocusCameraId) toggleOption(currentFocusCameraId, opt);
+    }
+
+    // Initial load and periodic polling every 1000ms
+    fetchState();
+    setInterval(fetchState, 1000);
+  </script>
+</body>
+</html>

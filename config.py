@@ -5,6 +5,8 @@ from typing import List
 # Paths
 BACKEND_DIR = Path(__file__).resolve().parent
 MODEL_DIR = BACKEND_DIR / "model"
+STATIC_DIR = BACKEND_DIR / "static"
+REGISTRY_FILE = BACKEND_DIR / "camera_registry.json"
 
 def resolve_model_path(filename: str) -> Path:
     """Finds model weights across standard project directories."""
@@ -51,3 +53,13 @@ DEFAULT_SMOOTH = int(os.getenv("SMOOTH_WINDOW", "10"))
 DEFAULT_ZONE = os.getenv("CAMERA_ZONE", "Terminal Concourse 04 • Zone B")
 DEFAULT_HEATMAP = os.getenv("ENABLE_HEATMAP", "true").lower() == "true"
 DEFAULT_CLUSTERS = os.getenv("ENABLE_CLUSTERS", "true").lower() == "true"
+STATION_NAME = os.getenv("STATION_NAME", "Central Station Hub • Operations Control Room")
+
+# Candidate sample videos for offline local demonstration
+CANDIDATE_SAMPLE_VIDEOS = [
+    str(BACKEND_DIR.parent / "model" / "input" / "12781687_1920_1080_30fps.mp4"),
+    str(BACKEND_DIR.parent / "model" / "input" / "15548772-hd_1080_1920_60fps.mp4"),
+    str(BACKEND_DIR.parent / "model" / "input" / "12208078_1080_1920_60fps.mp4"),
+    str(BACKEND_DIR / "sample_video.mp4"),
+]
+

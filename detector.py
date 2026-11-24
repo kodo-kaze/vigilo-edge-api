@@ -1,4 +1,5 @@
 import pickle
+import threading
 from typing import Dict, Any, Tuple, List, Optional
 import cv2
 import numpy as np
@@ -388,10 +389,12 @@ def draw_annotations(
 class CrowdDetector:
     """
     Manages YOLO person detection and Random Forest crowd classification.
+    Thread-safe to support concurrent multi-camera inference pipelines.
     """
     def __init__(self, conf: float = 0.25, iou: float = 0.70):
         self.conf = conf
         self.iou = iou
+        self.lock = threading.Lock()
 
         print(f"[AI] Initializing YOLO model from {YOLO_MODEL_PATH}...")
         self.yolo_model = YOLO(str(YOLO_MODEL_PATH))
@@ -401,27 +404,36 @@ class CrowdDetector:
             self.rf_model = pickle.load(f)
         self.rf_model.n_jobs = 1
 
+    def update_thresholds(self, conf: Optional[float] = None, iou: Optional[float] = None) -> None:
+        with self.lock:
+            if conf is not None:
+                self.conf = float(conf)
+            if iou is not None:
+                self.iou = float(iou)
+
     def predict(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], float]:
         """
         Runs YOLO detection, feature extraction, and Random Forest prediction.
+        Guarded by mutex to ensure safe multi-threaded inference across cameras.
         Returns (boxes, confidences, features_dict, raw_crowd_probability).
         """
-        results = self.yolo_model.predict(
-            source=frame,
-            conf=self.conf,
-            iou=self.iou,
-            classes=[0],  # Person class only
-            max_det=500,
-            verbose=False
-        )
-        result = results[0]
+        with self.lock:
+            results = self.yolo_model.predict(
+                source=frame,
+                conf=self.conf,
+                iou=self.iou,
+                classes=[0],  # Person class only
+                max_det=500,
+                verbose=False
+            )
+            result = results[0]
 
-        features = extract_features(result)
+            features = extract_features(result)
 
-        feature_df = pd.DataFrame([features], columns=FEATURE_COLUMNS)
-        raw_prob = float(self.rf_model.predict_proba(feature_df)[0][1])
+            feature_df = pd.DataFrame([features], columns=FEATURE_COLUMNS)
+            raw_prob = float(self.rf_model.predict_proba(feature_df)[0][1])
 
-        boxes = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else np.empty((0, 4))
-        confidences = result.boxes.conf.cpu().numpy() if result.boxes is not None else np.empty(0)
+            boxes = result.boxes.xyxy.cpu().numpy() if result.boxes is not None else np.empty((0, 4))
+            confidences = result.boxes.conf.cpu().numpy() if result.boxes is not None else np.empty(0)
 
-        return boxes, confidences, features, raw_prob
+            return boxes, confidences, features, raw_prob
