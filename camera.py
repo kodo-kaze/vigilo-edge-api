@@ -655,7 +655,8 @@ class CameraManager:
         if self.registry_file.exists():
             try:
                 with open(self.registry_file, "r", encoding="utf-8") as f:
-                    configs = json.load(f)
+                    content = f.read().strip()
+                    configs = json.loads(content) if content else []
                 print(f"[CameraManager] Loaded {len(configs)} cameras from {self.registry_file}")
             except Exception as e:
                 print(f"[CameraManager] Error loading {self.registry_file}: {e}")
