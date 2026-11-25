@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "id": "ph-1",
+    "cam_id": "ph-1",
+    "name": "ph-1",
+    "source": "http://192.168.29.193:8080/video",
+    "zone": "nice-place",
+    "lat": null,
+    "lon": null,
+    "coordinates": {
+      "floor": "Level 1 - Concourse",
+      "x": 150,
+      "y": 300,
+      "z": 0,
+      "latitude": null,
+      "longitude": null
+    },
+    "active": false,
+    "is_public": false,
+    "approved_for_public": false,
+    "show_heatmap": false,
+    "show_clusters": false,
+    "conf": 0.25,
+    "iou": 0.7,
+    "stride": 1,
+    "smooth": 10,
+    "created_at": "2026-11-25T07:25:33Z"
+  }
+]
