@@ -1,7 +1,8 @@
 import asyncio
+import base64
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import websockets
 
@@ -59,6 +60,7 @@ class EdgeCloudBridge:
         self._event_queue: Optional[asyncio.Queue] = None
         self._stop_event: Optional[asyncio.Event] = None
         self._active_ws: Any = None
+        self._active_stream_cams: Set[str] = set()
 
         self._status: str = "Disabled" if not self.ws_url else "Reconnecting"
         self._connected: bool = False
@@ -219,10 +221,11 @@ class EdgeCloudBridge:
 
                     telemetry_task = asyncio.create_task(self._telemetry_loop(ws))
                     events_task = asyncio.create_task(self._immediate_events_loop(ws))
+                    video_task = asyncio.create_task(self._video_stream_loop(ws))
                     recv_task = asyncio.create_task(self._command_listener_loop(ws))
 
                     done, pending = await asyncio.wait(
-                        {telemetry_task, events_task, recv_task},
+                        {telemetry_task, events_task, video_task, recv_task},
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for task in pending:
@@ -278,6 +281,42 @@ class EdgeCloudBridge:
             event = await self._event_queue.get()
             await ws.send(json.dumps(event))
 
+    async def _video_stream_loop(self, ws: Any):
+        """
+        Pipes annotated JPEG frames from actively watched public cameras directly
+        through the existing reverse WebSocket connection to the Geo Server.
+        Zero inbound port opening or tunnels needed!
+        """
+        assert self._stop_event is not None
+        frame_interval = 0.08  # ~12 FPS
+        while not self._stop_event.is_set():
+            if not self._active_stream_cams:
+                await asyncio.sleep(0.2)
+                continue
+
+            for cam_id in list(self._active_stream_cams):
+                node = self.manager.get_camera(cam_id)
+                if node is None or not node.active or not node.is_public:
+                    self._active_stream_cams.discard(cam_id)
+                    continue
+
+                frame_bytes = node.get_latest_frame()
+                if frame_bytes:
+                    frame_b64 = base64.b64encode(frame_bytes).decode("ascii")
+                    msg = {
+                        "type": "video_frame",
+                        "edge_node_id": self.edge_node_id,
+                        "cam_id": cam_id,
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "frame_base64": frame_b64,
+                    }
+                    try:
+                        await ws.send(json.dumps(msg))
+                    except Exception:
+                        break
+
+            await asyncio.sleep(frame_interval)
+
     async def _command_listener_loop(self, ws: Any):
         async for raw_message in ws:
             try:
@@ -293,9 +332,11 @@ class EdgeCloudBridge:
             if action == "start_stream":
                 node = self.manager.get_camera(cam_id)
                 if node is not None and node.is_public and node.active:
-                    started = self.relay.start(node)
-                    if started:
-                        self.notify_camera_updated(cam_id)
+                    self._active_stream_cams.add(cam_id)
+                    node.set_streaming_to_cloud(True)
+                    self.relay.start(node)
+                    self.notify_camera_updated(cam_id)
+                    print(f"[EdgeCloudBridge] Streaming camera {cam_id} securely to Geo Server over reverse WebSocket")
                 else:
                     print(
                         f"[EdgeCloudBridge] Ignoring start_stream for {cam_id} "
@@ -305,6 +346,10 @@ class EdgeCloudBridge:
                     if node is not None:
                         self.notify_camera_updated(cam_id)
             elif action == "stop_stream":
+                self._active_stream_cams.discard(cam_id)
                 await asyncio.to_thread(self.relay.stop, cam_id)
-                if self.manager.get_camera(cam_id) is not None:
+                node = self.manager.get_camera(cam_id)
+                if node is not None:
+                    node.set_streaming_to_cloud(False)
                     self.notify_camera_updated(cam_id)
+                print(f"[EdgeCloudBridge] Stopped streaming camera {cam_id}")
