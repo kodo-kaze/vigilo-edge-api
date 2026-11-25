@@ -2,9 +2,11 @@ from collections import deque
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
 import cv2
 import numpy as np
@@ -21,6 +23,11 @@ try:
         DEFAULT_ZONE,
         DEFAULT_HEATMAP,
         DEFAULT_CLUSTERS,
+        GEO_MEDIA_PUSH_URL,
+        EDGE_NODE_ID,
+        CLOUD_STREAM_WIDTH,
+        CLOUD_STREAM_HEIGHT,
+        CLOUD_STREAM_FPS,
     )
     from detector import CrowdDetector, draw_annotations, detect_spatial_clusters
 except ImportError:
@@ -32,6 +39,11 @@ except ImportError:
         DEFAULT_ZONE,
         DEFAULT_HEATMAP,
         DEFAULT_CLUSTERS,
+        GEO_MEDIA_PUSH_URL,
+        EDGE_NODE_ID,
+        CLOUD_STREAM_WIDTH,
+        CLOUD_STREAM_HEIGHT,
+        CLOUD_STREAM_FPS,
     )
     from backend.detector import CrowdDetector, draw_annotations, detect_spatial_clusters
 
@@ -545,3 +557,284 @@ class CrowdStreamBroadcaster:
     def stop(self):
         self.running = False
         self.camera.stop()
+
+
+def _make_cloud_waiting_frame(width: int, height: int, label: str) -> np.ndarray:
+    """Generates a lightweight 480p placeholder frame while waiting for first camera frame."""
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:] = (12, 16, 24)
+    cv2.putText(
+        frame,
+        f"VIGILO CLOUD RELAY // {label}",
+        (28, height // 2 - 8),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (180, 210, 235),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        "Awaiting processed optical stream...",
+        (28, height // 2 + 22),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (100, 130, 160),
+        1,
+        cv2.LINE_AA,
+    )
+    return frame
+
+
+class CloudStreamPusher:
+    """
+    Per-camera outbound FFmpeg streamer.
+    Downscales processed BGR frames to 480p @ 15 FPS and pushes via RTSP/SRT
+    to the Geo Server's MediaMTX relay with ultra-low latency.
+    """
+
+    def __init__(
+        self,
+        camera_node: Any,
+        target_url: str,
+        width: int = CLOUD_STREAM_WIDTH,
+        height: int = CLOUD_STREAM_HEIGHT,
+        fps: int = CLOUD_STREAM_FPS,
+    ):
+        self.camera_node = camera_node
+        self.cam_id = camera_node.cam_id
+        self.target_url = target_url
+        self.width = width
+        self.height = height
+        self.fps = max(1, fps)
+
+        self._stop_event = threading.Event()
+        self._proc_lock = threading.Lock()
+        self._proc: Optional[subprocess.Popen] = None
+        self._fallback_frame = _make_cloud_waiting_frame(self.width, self.height, self.cam_id)
+        self._thread = threading.Thread(target=self._push_loop, daemon=True, name=f"cloud-relay-{self.cam_id}")
+
+    def start(self):
+        self.camera_node.set_streaming_to_cloud(True)
+        self._thread.start()
+
+    def _build_ffmpeg_cmd(self) -> List[str]:
+        ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-loglevel", "warning",
+            "-f", "rawvideo",
+            "-vcodec", "rawvideo",
+            "-pix_fmt", "bgr24",
+            "-s", f"{self.width}x{self.height}",
+            "-r", str(self.fps),
+            "-i", "-",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p",
+            "-g", str(self.fps * 2),
+        ]
+        if self.target_url.lower().startswith("srt://"):
+            cmd.extend(["-f", "mpegts", self.target_url])
+        else:
+            cmd.extend([
+                "-rtsp_transport", "tcp",
+                "-f", "rtsp",
+                self.target_url,
+            ])
+        return cmd
+
+    def _spawn_process(self) -> Optional[subprocess.Popen]:
+        if shutil.which("ffmpeg") is None:
+            print(f"[CloudStreamRelay] ffmpeg binary not found; cannot push stream for {self.cam_id}")
+            return None
+        cmd = self._build_ffmpeg_cmd()
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+            with self._proc_lock:
+                self._proc = proc
+            print(f"[CloudStreamRelay] Started outbound push for {self.cam_id} -> {self.target_url}")
+            return proc
+        except Exception as exc:
+            print(f"[CloudStreamRelay] Failed to spawn ffmpeg for {self.cam_id}: {exc}")
+            return None
+
+    def _terminate_process(self):
+        with self._proc_lock:
+            proc = self._proc
+            self._proc = None
+
+        if proc is None:
+            return
+
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                proc.stdin.close()
+        except Exception:
+            pass
+
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        try:
+            if proc.stderr and not proc.stderr.closed:
+                proc.stderr.close()
+        except Exception:
+            pass
+
+    def _push_loop(self):
+        frame_interval = 1.0 / float(self.fps)
+        proc: Optional[subprocess.Popen] = None
+
+        try:
+            while not self._stop_event.is_set():
+                if not self.camera_node.running or not self.camera_node.active or not self.camera_node.is_public:
+                    print(f"[CloudStreamRelay] Camera {self.cam_id} became inactive/private; stopping cloud stream.")
+                    break
+
+                if proc is None or proc.poll() is not None:
+                    self._terminate_process()
+                    proc = self._spawn_process()
+                    if proc is None:
+                        if self._stop_event.wait(2.0):
+                            break
+                        continue
+
+                loop_start = time.monotonic()
+                frame = self.camera_node.get_latest_annotated_frame()
+                if frame is None:
+                    out_frame = self._fallback_frame
+                else:
+                    h, w = frame.shape[:2]
+                    if w != self.width or h != self.height:
+                        out_frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+                    else:
+                        out_frame = frame
+
+                try:
+                    if proc.stdin is not None:
+                        proc.stdin.write(out_frame.tobytes())
+                        proc.stdin.flush()
+                except (BrokenPipeError, OSError, ValueError) as exc:
+                    if not self._stop_event.is_set():
+                        print(f"[CloudStreamRelay] FFmpeg pipe interrupted for {self.cam_id}: {exc}")
+                    self._terminate_process()
+                    proc = None
+                    if self._stop_event.wait(1.0):
+                        break
+                    continue
+
+                elapsed = time.monotonic() - loop_start
+                sleep_for = frame_interval - elapsed
+                if sleep_for > 0:
+                    if self._stop_event.wait(sleep_for):
+                        break
+        finally:
+            self._terminate_process()
+            self.camera_node.set_streaming_to_cloud(False)
+            print(f"[CloudStreamRelay] Stopped outbound push for {self.cam_id}")
+
+    def stop(self, timeout: float = 3.0):
+        self._stop_event.set()
+        self._terminate_process()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=timeout)
+        self.camera_node.set_streaming_to_cloud(False)
+
+
+class CloudStreamRelay:
+    """
+    Manages on-demand outbound 480p FFmpeg stream pushers for all cameras.
+    Streams only when `cam.is_public == True`, `cam.active == True`, and requested by Geo Server.
+    """
+
+    def __init__(
+        self,
+        media_push_url: str = GEO_MEDIA_PUSH_URL,
+        edge_node_id: str = EDGE_NODE_ID,
+        width: int = CLOUD_STREAM_WIDTH,
+        height: int = CLOUD_STREAM_HEIGHT,
+        fps: int = CLOUD_STREAM_FPS,
+    ):
+        self.media_push_url = media_push_url.rstrip("/")
+        self.edge_node_id = edge_node_id.strip("/")
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self._lock = threading.Lock()
+        self._pushers: Dict[str, CloudStreamPusher] = {}
+
+    def build_target_url(self, cam_id: str) -> str:
+        return f"{self.media_push_url}/{self.edge_node_id}/{cam_id}"
+
+    def start(self, camera_node: Any) -> bool:
+        """Starts outbound cloud stream push if camera is active and public."""
+        if camera_node is None:
+            return False
+        if not camera_node.active or not camera_node.is_public:
+            print(
+                f"[CloudStreamRelay] Refused start_stream for {camera_node.cam_id} "
+                f"(active={camera_node.active}, is_public={camera_node.is_public})"
+            )
+            return False
+
+        cam_id = camera_node.cam_id
+        with self._lock:
+            existing = self._pushers.get(cam_id)
+            if existing is not None and existing._thread.is_alive():
+                return True
+            pusher = CloudStreamPusher(
+                camera_node=camera_node,
+                target_url=self.build_target_url(cam_id),
+                width=self.width,
+                height=self.height,
+                fps=self.fps,
+            )
+            self._pushers[cam_id] = pusher
+            pusher.start()
+            return True
+
+    def stop(self, cam_id: str) -> bool:
+        """Immediately stops outbound cloud stream push for cam_id."""
+        with self._lock:
+            pusher = self._pushers.pop(cam_id, None)
+        if pusher is None:
+            return False
+        pusher.stop()
+        return True
+
+    def stop_all(self):
+        """Terminates all active outbound FFmpeg pushers cleanly."""
+        with self._lock:
+            pushers = list(self._pushers.values())
+            self._pushers.clear()
+        for pusher in pushers:
+            pusher.stop()
+
+    def is_streaming(self, cam_id: str) -> bool:
+        with self._lock:
+            pusher = self._pushers.get(cam_id)
+            return bool(pusher is not None and pusher._thread.is_alive())
+
+    def active_streams(self) -> List[str]:
+        with self._lock:
+            return [cid for cid, p in self._pushers.items() if p._thread.is_alive()]

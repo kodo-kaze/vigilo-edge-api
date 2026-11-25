@@ -55,6 +55,16 @@ DEFAULT_HEATMAP = os.getenv("ENABLE_HEATMAP", "true").lower() == "true"
 DEFAULT_CLUSTERS = os.getenv("ENABLE_CLUSTERS", "true").lower() == "true"
 STATION_NAME = os.getenv("STATION_NAME", "Central Station Hub • Operations Control Room")
 
+# Geo Server Bridge & Outbound Media Relay Configuration
+GEO_SERVER_WS_URL = os.getenv("GEO_SERVER_WS_URL", "ws://localhost:8001/ws/edge")
+GEO_MEDIA_PUSH_URL = os.getenv("GEO_MEDIA_PUSH_URL", "rtsp://localhost:8554")
+EDGE_NODE_ID = os.getenv("EDGE_NODE_ID", "central-hub-01")
+EDGE_API_KEY = os.getenv("EDGE_API_KEY", "vigilo-dev-edge-key")
+TELEMETRY_PUSH_INTERVAL = float(os.getenv("TELEMETRY_PUSH_INTERVAL", "1.0"))
+CLOUD_STREAM_WIDTH = int(os.getenv("CLOUD_STREAM_WIDTH", "854"))
+CLOUD_STREAM_HEIGHT = int(os.getenv("CLOUD_STREAM_HEIGHT", "480"))
+CLOUD_STREAM_FPS = int(os.getenv("CLOUD_STREAM_FPS", "15"))
+
 # Candidate sample videos for offline local demonstration
 CANDIDATE_SAMPLE_VIDEOS = [
     str(BACKEND_DIR.parent / "model" / "input" / "12781687_1920_1080_30fps.mp4"),

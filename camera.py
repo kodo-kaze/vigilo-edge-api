@@ -143,6 +143,29 @@ def generate_placeholder_frame(
     return buffer.tobytes() if success else b""
 
 
+def _normalize_coordinates(
+    coordinates: Optional[Dict[str, Any]],
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+) -> Tuple[Dict[str, Any], Optional[float], Optional[float]]:
+    """Normalizes physical coordinates and GPS lat/lon fields into a consistent structure."""
+    coords = dict(coordinates) if coordinates else {}
+    coords.setdefault("floor", "Level 1 - Concourse")
+    coords.setdefault("x", 100.0)
+    coords.setdefault("y", 100.0)
+    coords.setdefault("z", 0.0)
+
+    resolved_lat = lat if lat is not None else coords.get("latitude", coords.get("lat"))
+    resolved_lon = lon if lon is not None else coords.get("longitude", coords.get("lon"))
+
+    resolved_lat = float(resolved_lat) if resolved_lat is not None and str(resolved_lat).strip() != "" else None
+    resolved_lon = float(resolved_lon) if resolved_lon is not None and str(resolved_lon).strip() != "" else None
+
+    coords["latitude"] = resolved_lat
+    coords["longitude"] = resolved_lon
+    return coords, resolved_lat, resolved_lon
+
+
 class CameraNode:
     """
     Manages an individual CCTV camera pipeline within the On-Premise Edge Server:
@@ -159,9 +182,12 @@ class CameraNode:
         source: Any,
         zone: str = DEFAULT_ZONE,
         coordinates: Optional[Dict[str, Any]] = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
         detector: Optional[CrowdDetector] = None,
         active: bool = True,
-        approved_for_public: bool = False,
+        approved_for_public: Optional[bool] = None,
+        is_public: Optional[bool] = None,
         show_heatmap: bool = DEFAULT_HEATMAP,
         show_clusters: bool = DEFAULT_CLUSTERS,
         conf: float = DEFAULT_CONF,
@@ -171,19 +197,16 @@ class CameraNode:
         created_at: Optional[str] = None,
     ):
         self.id = str(camera_id).strip()
+        self.cam_id = self.id
         self.name = str(name).strip()
         self.source = int(source) if str(source).isdigit() else source
         self.zone = str(zone).strip()
-        self.coordinates = coordinates or {
-            "floor": "Level 1 - Concourse",
-            "x": 100.0,
-            "y": 100.0,
-            "z": 0.0,
-            "latitude": None,
-            "longitude": None,
-        }
+        self.coordinates, self.lat, self.lon = _normalize_coordinates(coordinates, lat=lat, lon=lon)
         self.active = bool(active)
-        self.approved_for_public = bool(approved_for_public)
+        resolved_public = is_public if is_public is not None else (approved_for_public if approved_for_public is not None else True)
+        self.is_public = bool(resolved_public)
+        self.approved_for_public = self.is_public
+        self.is_streaming_to_cloud = False
         self.show_heatmap = bool(show_heatmap)
         self.show_clusters = bool(show_clusters)
         self.conf = float(conf)
@@ -198,6 +221,7 @@ class CameraNode:
         # Thread synchronization
         self.lock = threading.Lock()
         self.latest_jpeg: Optional[bytes] = None
+        self.latest_annotated_frame: Optional[np.ndarray] = None
         self.running = True
         self.start_time = time.time()
 
@@ -207,8 +231,11 @@ class CameraNode:
         # Initial cached telemetry
         self.stats: Dict[str, Any] = {
             "id": self.id,
+            "cam_id": self.cam_id,
             "name": self.name,
             "zone": self.zone,
+            "lat": self.lat,
+            "lon": self.lon,
             "coordinates": self.coordinates,
             "source": self.source_meta.get("masked_source", str(self.source)),
             "raw_source": str(self.source),
@@ -217,12 +244,16 @@ class CameraNode:
             "port": self.source_meta.get("port"),
             "active": self.active,
             "is_suspended": not self.active,
+            "is_public": self.is_public,
             "approved_for_public": self.approved_for_public,
+            "is_streaming_to_cloud": self.is_streaming_to_cloud,
             "status": "INITIALIZING" if self.active else "STANDBY",
             "is_crowd": False,
             "crowd_probability": 0.0,
             "people_count": 0,
+            "person_count": 0,
             "density_per_megapixel": 0.0,
+            "people_per_megapixel": 0.0,
             "nearest_neighbor_distance": 0.0,
             "dense_clusters_count": 0,
             "gatherings_count": 0,
@@ -340,6 +371,7 @@ class CameraNode:
             if success:
                 jpeg_bytes = jpeg_buffer.tobytes()
                 with self.lock:
+                    self.latest_annotated_frame = annotated_frame
                     self.latest_jpeg = jpeg_bytes
 
                     if cached_is_crowd or dense_cnt > 0:
@@ -349,14 +381,19 @@ class CameraNode:
                     else:
                         status_str = "OFFLINE"
 
+                    person_cnt = cached_features.get("person_count", 0)
+                    density_mp = round(cached_features.get("people_per_megapixel", 0.0), 2)
+
                     self.stats.update({
                         "status": status_str,
                         "is_suspended": False,
                         "active": True,
                         "is_crowd": cached_is_crowd,
                         "crowd_probability": round(cached_prob, 4),
-                        "people_count": cached_features.get("person_count", 0),
-                        "density_per_megapixel": round(cached_features.get("people_per_megapixel", 0.0), 2),
+                        "people_count": person_cnt,
+                        "person_count": person_cnt,
+                        "density_per_megapixel": density_mp,
+                        "people_per_megapixel": density_mp,
                         "nearest_neighbor_distance": round(
                             cached_features.get("average_nearest_neighbor_distance", 0.0), 4
                         ),
@@ -381,13 +418,27 @@ class CameraNode:
                 return self.latest_jpeg
             return self._cached_standby_frame
 
+    def get_latest_annotated_frame(self) -> Optional[np.ndarray]:
+        """Returns a copy of the latest processed BGR frame for outbound cloud streaming."""
+        if not self.active:
+            return None
+        with self.lock:
+            if self.latest_annotated_frame is not None:
+                return self.latest_annotated_frame.copy()
+            return None
+
     def get_stats(self) -> Dict[str, Any]:
         """Returns complete thread-safe telemetry dictionary."""
         with self.lock:
             stats = dict(self.stats)
+            stats["cam_id"] = self.cam_id
+            stats["lat"] = self.lat
+            stats["lon"] = self.lon
             stats["active"] = self.active
             stats["is_suspended"] = not self.active
-            stats["approved_for_public"] = self.approved_for_public
+            stats["is_public"] = self.is_public
+            stats["approved_for_public"] = self.is_public
+            stats["is_streaming_to_cloud"] = self.is_streaming_to_cloud
             stats["heatmap_enabled"] = self.show_heatmap
             stats["clusters_enabled"] = self.show_clusters
             stats["coordinates"] = self.coordinates
@@ -398,6 +449,48 @@ class CameraNode:
                 stats["fps"] = 0.0
                 stats["resolution"] = "Standby (Idle)"
             return stats
+
+    def get_cloud_registration(self) -> Dict[str, Any]:
+        """Returns compact metadata payload for Geo Server camera registration."""
+        with self.lock:
+            return {
+                "cam_id": self.cam_id,
+                "name": self.name,
+                "zone": self.zone,
+                "lat": self.lat,
+                "lon": self.lon,
+                "is_public": self.is_public,
+                "active": self.active,
+                "is_streaming_to_cloud": self.is_streaming_to_cloud,
+                "status": "STANDBY" if not self.active else self.stats.get("status", "ONLINE"),
+            }
+
+    def get_cloud_telemetry(self) -> Dict[str, Any]:
+        """Returns live crowd telemetry payload for Geo Server telemetry_batch."""
+        with self.lock:
+            return {
+                "cam_id": self.cam_id,
+                "name": self.name,
+                "zone": self.zone,
+                "lat": self.lat,
+                "lon": self.lon,
+                "is_crowd": bool(self.stats.get("is_crowd", False)) if self.active else False,
+                "crowd_probability": float(self.stats.get("crowd_probability", 0.0)) if self.active else 0.0,
+                "person_count": int(self.stats.get("person_count", 0)) if self.active else 0,
+                "people_per_megapixel": float(self.stats.get("people_per_megapixel", 0.0)) if self.active else 0.0,
+                "dense_clusters_count": int(self.stats.get("dense_clusters_count", 0)) if self.active else 0,
+                "gatherings_count": int(self.stats.get("gatherings_count", 0)) if self.active else 0,
+                "is_public": self.is_public,
+                "active": self.active,
+                "is_streaming_to_cloud": self.is_streaming_to_cloud,
+                "status": "STANDBY" if not self.active else self.stats.get("status", "ONLINE"),
+            }
+
+    def set_streaming_to_cloud(self, streaming: bool):
+        """Updates runtime outbound cloud relay status flag."""
+        with self.lock:
+            self.is_streaming_to_cloud = bool(streaming)
+            self.stats["is_streaming_to_cloud"] = self.is_streaming_to_cloud
 
     def suspend(self):
         """Suspends camera capture device and inference loop to conserve hardware resources."""
@@ -433,12 +526,14 @@ class CameraNode:
             return True
 
     def set_public_approval(self, approved: bool) -> bool:
-        """Sets control room public visibility approval flag."""
+        """Sets control room public visibility approval flag (is_public)."""
         with self.lock:
-            self.approved_for_public = bool(approved)
-            self.stats["approved_for_public"] = self.approved_for_public
-        print(f"[Camera {self.id}] Public Visibility set to: {self.approved_for_public}")
-        return self.approved_for_public
+            self.is_public = bool(approved)
+            self.approved_for_public = self.is_public
+            self.stats["is_public"] = self.is_public
+            self.stats["approved_for_public"] = self.is_public
+        print(f"[Camera {self.id}] Public Visibility (is_public) set to: {self.is_public}")
+        return self.is_public
 
     def set_display_options(self, heatmap: Optional[bool] = None, clusters: Optional[bool] = None):
         """Toggles real-time ground heatmap and spatial clustering overlays."""
@@ -456,8 +551,11 @@ class CameraNode:
         source: Optional[Any] = None,
         zone: Optional[str] = None,
         coordinates: Optional[Dict[str, Any]] = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
         active: Optional[bool] = None,
         approved_for_public: Optional[bool] = None,
+        is_public: Optional[bool] = None,
         show_heatmap: Optional[bool] = None,
         show_clusters: Optional[bool] = None,
     ):
@@ -470,12 +568,24 @@ class CameraNode:
             if zone is not None:
                 self.zone = str(zone).strip()
                 self.stats["zone"] = self.zone
-            if coordinates is not None:
-                self.coordinates = coordinates
+            if coordinates is not None or lat is not None or lon is not None:
+                merged_coords = dict(self.coordinates)
+                if coordinates is not None:
+                    merged_coords.update(coordinates)
+                self.coordinates, self.lat, self.lon = _normalize_coordinates(
+                    merged_coords,
+                    lat=lat,
+                    lon=lon,
+                )
                 self.stats["coordinates"] = self.coordinates
-            if approved_for_public is not None:
-                self.approved_for_public = bool(approved_for_public)
-                self.stats["approved_for_public"] = self.approved_for_public
+                self.stats["lat"] = self.lat
+                self.stats["lon"] = self.lon
+            resolved_public = is_public if is_public is not None else approved_for_public
+            if resolved_public is not None:
+                self.is_public = bool(resolved_public)
+                self.approved_for_public = self.is_public
+                self.stats["is_public"] = self.is_public
+                self.stats["approved_for_public"] = self.is_public
             if show_heatmap is not None:
                 self.show_heatmap = bool(show_heatmap)
                 self.stats["heatmap_enabled"] = self.show_heatmap
@@ -517,12 +627,16 @@ class CameraNode:
         with self.lock:
             return {
                 "id": self.id,
+                "cam_id": self.cam_id,
                 "name": self.name,
                 "source": self.source,
                 "zone": self.zone,
+                "lat": self.lat,
+                "lon": self.lon,
                 "coordinates": self.coordinates,
                 "active": self.active,
-                "approved_for_public": self.approved_for_public,
+                "is_public": self.is_public,
+                "approved_for_public": self.is_public,
                 "show_heatmap": self.show_heatmap,
                 "show_clusters": self.show_clusters,
                 "conf": self.conf,
@@ -669,7 +783,7 @@ class CameraManager:
             return
 
         for cfg in configs:
-            cid = cfg.get("id")
+            cid = cfg.get("cam_id") or cfg.get("id")
             if not cid:
                 continue
             try:
@@ -679,9 +793,12 @@ class CameraManager:
                     source=cfg.get("source", "0"),
                     zone=cfg.get("zone", DEFAULT_ZONE),
                     coordinates=cfg.get("coordinates"),
+                    lat=cfg.get("lat"),
+                    lon=cfg.get("lon"),
                     detector=self.detector,
                     active=cfg.get("active", True),
-                    approved_for_public=cfg.get("approved_for_public", False),
+                    approved_for_public=cfg.get("approved_for_public"),
+                    is_public=cfg.get("is_public"),
                     show_heatmap=cfg.get("show_heatmap", DEFAULT_HEATMAP),
                     show_clusters=cfg.get("show_clusters", DEFAULT_CLUSTERS),
                     conf=cfg.get("conf", DEFAULT_CONF),
@@ -715,8 +832,11 @@ class CameraManager:
         zone: str = DEFAULT_ZONE,
         camera_id: Optional[str] = None,
         coordinates: Optional[Dict[str, Any]] = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
         active: bool = True,
-        approved_for_public: bool = False,
+        approved_for_public: Optional[bool] = None,
+        is_public: Optional[bool] = None,
         show_heatmap: bool = DEFAULT_HEATMAP,
         show_clusters: bool = DEFAULT_CLUSTERS,
         conf: float = DEFAULT_CONF,
@@ -742,9 +862,12 @@ class CameraManager:
                 source=source,
                 zone=zone,
                 coordinates=coordinates,
+                lat=lat,
+                lon=lon,
                 detector=self.detector,
                 active=active,
                 approved_for_public=approved_for_public,
+                is_public=is_public,
                 show_heatmap=show_heatmap,
                 show_clusters=show_clusters,
                 conf=conf,
@@ -861,6 +984,18 @@ class CameraManager:
             if self.cameras:
                 return next(iter(self.cameras.values()))
         return None
+
+    def get_cloud_registrations(self) -> List[Dict[str, Any]]:
+        """Returns camera metadata list for initial Geo Server register_node sync."""
+        with self.lock:
+            nodes = list(self.cameras.values())
+        return [node.get_cloud_registration() for node in nodes]
+
+    def get_cloud_telemetry_batch(self) -> List[Dict[str, Any]]:
+        """Returns live telemetry batch list for periodic Geo Server push."""
+        with self.lock:
+            nodes = list(self.cameras.values())
+        return [node.get_cloud_telemetry() for node in nodes]
 
     def stop_all(self):
         """Clean shutdown of all cameras and ingestion pipelines."""

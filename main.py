@@ -27,9 +27,16 @@ try:
         DEFAULT_CLUSTERS,
         STATIC_DIR,
         STATION_NAME,
+        GEO_SERVER_WS_URL,
+        GEO_MEDIA_PUSH_URL,
+        EDGE_NODE_ID,
+        EDGE_API_KEY,
+        TELEMETRY_PUSH_INTERVAL,
     )
     from detector import CrowdDetector
     from camera import CameraManager, CameraNode, generate_placeholder_frame
+    from stream import CloudStreamRelay
+    from cloud_bridge import EdgeCloudBridge
 except ImportError:
     from backend.config import (
         DEFAULT_SOURCE,
@@ -44,12 +51,21 @@ except ImportError:
         DEFAULT_CLUSTERS,
         STATIC_DIR,
         STATION_NAME,
+        GEO_SERVER_WS_URL,
+        GEO_MEDIA_PUSH_URL,
+        EDGE_NODE_ID,
+        EDGE_API_KEY,
+        TELEMETRY_PUSH_INTERVAL,
     )
     from backend.detector import CrowdDetector
-    from backend.camera import CameraManager, CameraNode
+    from backend.camera import CameraManager, CameraNode, generate_placeholder_frame
+    from backend.stream import CloudStreamRelay
+    from backend.cloud_bridge import EdgeCloudBridge
 
-# Global Central Multi-Camera Manager instance
+# Global Central Multi-Camera Manager & Cloud Bridge instances
 manager: Optional[CameraManager] = None
+cloud_relay: Optional[CloudStreamRelay] = None
+cloud_bridge: Optional[EdgeCloudBridge] = None
 
 
 class CleanStreamingResponse(StreamingResponse):
@@ -67,12 +83,33 @@ class CleanStreamingResponse(StreamingResponse):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global manager
+    global manager, cloud_relay, cloud_bridge
     if manager is None:
         detector = CrowdDetector(conf=DEFAULT_CONF, iou=DEFAULT_IOU)
         manager = CameraManager(detector=detector)
+    if cloud_relay is None:
+        cloud_relay = CloudStreamRelay(
+            media_push_url=GEO_MEDIA_PUSH_URL,
+            edge_node_id=EDGE_NODE_ID,
+        )
+    if cloud_bridge is None:
+        cloud_bridge = EdgeCloudBridge(
+            manager=manager,
+            relay=cloud_relay,
+            ws_url=GEO_SERVER_WS_URL,
+            edge_node_id=EDGE_NODE_ID,
+            api_key=EDGE_API_KEY,
+            telemetry_interval=TELEMETRY_PUSH_INTERVAL,
+        )
+    cloud_bridge.start(asyncio.get_running_loop())
     yield
-    # Shutdown: Cleanly release all camera pipelines and worker threads
+    # Shutdown: Cleanly stop outbound bridge, FFmpeg pushers, and camera worker threads
+    if cloud_bridge:
+        print("[Shutdown] Stopping outbound Geo Server bridge...")
+        await cloud_bridge.stop()
+    if cloud_relay:
+        print("[Shutdown] Terminating outbound cloud stream relays...")
+        cloud_relay.stop_all()
     if manager:
         print("[Shutdown] Releasing camera hardware and worker threads...")
         manager.stop_all()
@@ -147,6 +184,7 @@ def healthcheck():
         "active_cameras": stats["active_cameras"],
         "online_cameras": stats["online_cameras"],
         "active_surge_alerts": stats["active_surge_alerts_count"],
+        "cloud_bridge": cloud_bridge.get_status() if cloud_bridge else None,
     }
 
 
@@ -158,10 +196,31 @@ def get_station_overview():
     - Multi-camera surge warnings and bottleneck chokepoints
     - Active vs Standby camera counts
     - Public broadcast visibility approvals
+    - Outbound Geo Server bridge connection & relay status
     """
     if manager is None:
         return JSONResponse(status_code=503, content={"error": "Edge Brain Manager not initialized"})
-    return manager.get_overview_stats()
+    overview = manager.get_overview_stats()
+    overview["cloud_bridge"] = cloud_bridge.get_status() if cloud_bridge else {
+        "status": "Disconnected",
+        "connected": False,
+        "edge_node_id": EDGE_NODE_ID,
+        "active_cloud_streams": [],
+    }
+    return overview
+
+
+@app.get("/api/cloud/status")
+def get_cloud_bridge_status():
+    """Returns live outbound Geo Server bridge connection and active cloud stream relays."""
+    if cloud_bridge is None:
+        return {
+            "status": "Disconnected",
+            "connected": False,
+            "edge_node_id": EDGE_NODE_ID,
+            "active_cloud_streams": [],
+        }
+    return cloud_bridge.get_status()
 
 
 # =============================================================================
@@ -180,10 +239,14 @@ class CameraRegisterRequest(BaseModel):
     name: str
     source: Any
     id: Optional[str] = None
+    cam_id: Optional[str] = None
     zone: Optional[str] = DEFAULT_ZONE
     coordinates: Optional[Dict[str, Any]] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     active: Optional[bool] = True
-    approved_for_public: Optional[bool] = False
+    is_public: Optional[bool] = None
+    approved_for_public: Optional[bool] = None
     show_heatmap: Optional[bool] = DEFAULT_HEATMAP
     show_clusters: Optional[bool] = DEFAULT_CLUSTERS
     stride: Optional[int] = DEFAULT_STRIDE
@@ -199,18 +262,25 @@ def register_camera(req: CameraRegisterRequest):
     if manager is None:
         return JSONResponse(status_code=503, content={"error": "Edge Brain Manager not initialized"})
 
+    resolved_public = req.is_public if req.is_public is not None else (
+        req.approved_for_public if req.approved_for_public is not None else True
+    )
     node = manager.register_camera(
         name=req.name,
         source=req.source,
-        camera_id=req.id,
+        camera_id=req.cam_id or req.id,
         zone=req.zone or DEFAULT_ZONE,
         coordinates=req.coordinates,
+        lat=req.lat,
+        lon=req.lon,
         active=req.active if req.active is not None else True,
-        approved_for_public=bool(req.approved_for_public),
+        is_public=bool(resolved_public),
         show_heatmap=req.show_heatmap if req.show_heatmap is not None else True,
         show_clusters=req.show_clusters if req.show_clusters is not None else True,
         stride=req.stride or DEFAULT_STRIDE,
     )
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(node.cam_id)
     return node.get_stats()
 
 
@@ -230,7 +300,10 @@ class CameraUpdateRequest(BaseModel):
     source: Optional[Any] = None
     zone: Optional[str] = None
     coordinates: Optional[Dict[str, Any]] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     active: Optional[bool] = None
+    is_public: Optional[bool] = None
     approved_for_public: Optional[bool] = None
     show_heatmap: Optional[bool] = None
     show_clusters: Optional[bool] = None
@@ -249,13 +322,20 @@ def update_camera(camera_id: str, req: CameraUpdateRequest):
         source=req.source,
         zone=req.zone,
         coordinates=req.coordinates,
+        lat=req.lat,
+        lon=req.lon,
         active=req.active,
+        is_public=req.is_public,
         approved_for_public=req.approved_for_public,
         show_heatmap=req.show_heatmap,
         show_clusters=req.show_clusters,
     )
     if not node:
         return JSONResponse(status_code=404, content={"error": f"Camera {camera_id} not found"})
+    if cloud_relay and (not node.is_public or not node.active):
+        cloud_relay.stop(camera_id)
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(camera_id)
     return node.get_stats()
 
 
@@ -264,9 +344,13 @@ def delete_camera(camera_id: str):
     """Safely halts and deregisters a CCTV camera feed."""
     if manager is None:
         return JSONResponse(status_code=503, content={"error": "Edge Brain Manager not initialized"})
+    if cloud_relay:
+        cloud_relay.stop(camera_id)
     success = manager.delete_camera(camera_id)
     if not success:
         return JSONResponse(status_code=404, content={"error": f"Camera {camera_id} not found"})
+    if cloud_bridge:
+        cloud_bridge.notify_camera_removed(camera_id)
     return {"status": "success", "message": f"Camera {camera_id} deregistered"}
 
 
@@ -333,7 +417,11 @@ def toggle_camera_power(camera_id: str):
     if not node:
         return JSONResponse(status_code=404, content={"error": f"Camera {camera_id} not found"})
     is_active = node.toggle()
+    if not is_active and cloud_relay:
+        cloud_relay.stop(camera_id)
     manager.save_registry()
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(camera_id)
     return {
         "status": "success",
         "camera_id": camera_id,
@@ -345,12 +433,14 @@ def toggle_camera_power(camera_id: str):
 
 class PublicApprovalRequest(BaseModel):
     approved: Optional[bool] = None
+    is_public: Optional[bool] = None
 
 
 @app.post("/api/cameras/{camera_id}/public")
 def set_camera_public_approval(camera_id: str, req: Optional[PublicApprovalRequest] = None):
     """
-    Sets or toggles control room approval for public station visibility.
+    Sets or toggles control room approval for public station visibility (is_public).
+    If set to False, immediately kills any active outbound cloud stream for this camera.
     """
     if manager is None:
         return JSONResponse(status_code=503, content={"error": "Edge Brain Manager not initialized"})
@@ -358,16 +448,27 @@ def set_camera_public_approval(camera_id: str, req: Optional[PublicApprovalReque
     if not node:
         return JSONResponse(status_code=404, content={"error": f"Camera {camera_id} not found"})
 
-    if req and req.approved is not None:
-        new_val = node.set_public_approval(req.approved)
+    requested = None
+    if req is not None:
+        requested = req.is_public if req.is_public is not None else req.approved
+
+    if requested is not None:
+        new_val = node.set_public_approval(requested)
     else:
-        new_val = node.set_public_approval(not node.approved_for_public)
+        new_val = node.set_public_approval(not node.is_public)
+
+    if not new_val and cloud_relay:
+        cloud_relay.stop(camera_id)
 
     manager.save_registry()
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(camera_id)
     return {
         "status": "success",
         "camera_id": camera_id,
+        "is_public": new_val,
         "approved_for_public": new_val,
+        "is_streaming_to_cloud": node.is_streaming_to_cloud,
         "message": f"Camera {camera_id} public visibility set to: {new_val}"
     }
 
@@ -588,7 +689,11 @@ def legacy_suspend_camera(camera_id: Optional[str] = None):
     if not target:
         return JSONResponse(status_code=404, content={"error": "No camera available"})
     target.suspend()
+    if cloud_relay:
+        cloud_relay.stop(target.cam_id)
     manager.save_registry()
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(target.cam_id)
     return {"status": "success", "suspended": True}
 
 
@@ -602,6 +707,8 @@ def legacy_resume_camera(camera_id: Optional[str] = None):
         return JSONResponse(status_code=404, content={"error": "No camera available"})
     target.resume()
     manager.save_registry()
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(target.cam_id)
     return {"status": "success", "suspended": False}
 
 
@@ -614,7 +721,11 @@ def legacy_toggle_camera(camera_id: Optional[str] = None):
     if not target:
         return JSONResponse(status_code=404, content={"error": "No camera available"})
     is_active = target.toggle()
+    if not is_active and cloud_relay:
+        cloud_relay.stop(target.cam_id)
     manager.save_registry()
+    if cloud_bridge:
+        cloud_bridge.notify_camera_updated(target.cam_id)
     return {"status": "success", "suspended": not is_active, "active": is_active}
 
 
@@ -692,6 +803,8 @@ def main():
     original_handle_exit = server.handle_exit
 
     def handle_exit(sig: int, frame) -> None:
+        if cloud_relay:
+            cloud_relay.stop_all()
         if manager:
             manager.stop_all()
         original_handle_exit(sig, frame)

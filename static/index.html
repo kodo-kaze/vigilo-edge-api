@@ -115,6 +115,49 @@
       animation: pulse-dot 2s infinite;
     }
 
+    .geo-link-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      background: rgba(245, 158, 11, 0.12);
+      color: #fbbf24;
+    }
+
+    .geo-link-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #fbbf24;
+      animation: pulse-dot 1.4s infinite;
+    }
+
+    .geo-link-badge.connected {
+      background: rgba(0, 229, 255, 0.12);
+      border-color: rgba(0, 229, 255, 0.35);
+      color: var(--cyan);
+    }
+
+    .geo-link-badge.connected .dot {
+      background-color: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    .geo-link-badge.disabled {
+      background: rgba(100, 116, 139, 0.15);
+      border-color: rgba(100, 116, 139, 0.35);
+      color: #94a3b8;
+    }
+
+    .geo-link-badge.disabled .dot {
+      background-color: #94a3b8;
+      animation: none;
+    }
+
     @keyframes pulse-dot {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
@@ -478,6 +521,26 @@
       color: #34d399;
     }
 
+    .badge-cloud-live {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      background: rgba(0, 229, 255, 0.15);
+      border: 1px solid rgba(0, 229, 255, 0.5);
+      color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.25);
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .badge-cloud-live.visible {
+      display: inline-flex;
+    }
+
     .badge-public.internal {
       background: rgba(245, 158, 11, 0.1);
       border: 1px solid rgba(245, 158, 11, 0.3);
@@ -813,6 +876,10 @@
             <span class="dot"></span>
             LOCAL ON-PREM BRAIN
           </span>
+          <span id="geo-link-badge" class="geo-link-badge reconnecting" title="Outbound Geo Server WebSocket Bridge">
+            <span class="dot"></span>
+            <span id="geo-link-text">Geo Server: Reconnecting</span>
+          </span>
         </div>
         <div class="brand-subtitle" id="station-name-label">Station Operations Control Room</div>
       </div>
@@ -964,14 +1031,25 @@
           </div>
         </div>
 
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">GPS Latitude</label>
+            <input type="number" step="any" id="reg-lat" class="form-input" placeholder="e.g. 22.5675" value="22.5675" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">GPS Longitude</label>
+            <input type="number" step="any" id="reg-lon" class="form-input" placeholder="e.g. 88.3705" value="88.3705" />
+          </div>
+        </div>
+
         <div class="form-group" style="margin-top: 12px;">
           <label class="form-checkbox-group">
             <input type="checkbox" id="reg-active" class="form-checkbox" checked />
             <span class="form-checkbox-label">Start streaming immediately (Active ingestion)</span>
           </label>
           <label class="form-checkbox-group">
-            <input type="checkbox" id="reg-public" class="form-checkbox" />
-            <span class="form-checkbox-label">Approve feed for Public Station Visibility</span>
+            <input type="checkbox" id="reg-public" class="form-checkbox" checked />
+            <span class="form-checkbox-label">Approve feed for Public Station Visibility (is_public)</span>
           </label>
           <label class="form-checkbox-group">
             <input type="checkbox" id="reg-heatmap" class="form-checkbox" checked />
@@ -1135,6 +1213,27 @@
 
       document.getElementById("metric-peak-zone").innerText = overview.highest_density_zone || "Normal";
       document.getElementById("metric-peak-density").innerText = `${overview.max_density_per_megapixel || 0.0} / Megapixel`;
+
+      // Update Geo Server Link Status badge
+      const geoBadge = document.getElementById("geo-link-badge");
+      const geoText = document.getElementById("geo-link-text");
+      if (geoBadge && geoText) {
+        const bridge = overview.cloud_bridge || {};
+        const st = bridge.status || "Reconnecting";
+        const activeCloudCount = Array.isArray(bridge.active_cloud_streams) ? bridge.active_cloud_streams.length : 0;
+        if (bridge.connected || st === "Connected") {
+          geoBadge.className = "geo-link-badge connected";
+          geoText.innerText = activeCloudCount > 0
+            ? `Geo Server: Connected (${activeCloudCount} Live)`
+            : "Geo Server: Connected";
+        } else if (st === "Disabled" || st === "Disconnected") {
+          geoBadge.className = "geo-link-badge disabled";
+          geoText.innerText = `Geo Server: ${st}`;
+        } else {
+          geoBadge.className = "geo-link-badge reconnecting";
+          geoText.innerText = "Geo Server: Reconnecting";
+        }
+      }
     }
 
     // Update or construct camera cards in DOM
@@ -1178,7 +1277,7 @@
                 </div>
                 <div class="card-zone" id="zone-${cam.id}">${cam.zone}</div>
                 <div class="card-coord" id="coord-${cam.id}">
-                  📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})
+                  📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})${cam.lat != null && cam.lon != null ? ` • GPS ${Number(cam.lat).toFixed(4)}, ${Number(cam.lon).toFixed(4)}` : ''}
                 </div>
               </div>
               <div class="card-badges">
@@ -1187,6 +1286,9 @@
                 </div>
                 <div class="badge-public ${cam.approved_for_public ? 'approved' : 'internal'}" id="public-badge-${cam.id}">
                   ${cam.approved_for_public ? 'Public Approved' : 'Internal Only'}
+                </div>
+                <div class="badge-cloud-live ${cam.is_streaming_to_cloud ? 'visible' : ''}" id="cloud-live-badge-${cam.id}">
+                  ● LIVE TO CLOUD
                 </div>
               </div>
             </div>
@@ -1230,7 +1332,7 @@
           // Update values in-place without touching <img> source (zero stream flicker!)
           document.getElementById(`title-${cam.id}`).innerText = cam.name;
           document.getElementById(`zone-${cam.id}`).innerText = cam.zone;
-          document.getElementById(`coord-${cam.id}`).innerText = `📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})`;
+          document.getElementById(`coord-${cam.id}`).innerText = `📍 ${cam.coordinates?.floor || 'Level 1'} • (${cam.coordinates?.x || '-'}, ${cam.coordinates?.y || '-'})${cam.lat != null && cam.lon != null ? ` • GPS ${Number(cam.lat).toFixed(4)}, ${Number(cam.lon).toFixed(4)}` : ''}`;
           
           const badge = document.getElementById(`status-badge-${cam.id}`);
           const wasOffline = badge.innerText.includes("OFFLINE");
@@ -1245,6 +1347,11 @@
           const pubBadge = document.getElementById(`public-badge-${cam.id}`);
           pubBadge.className = `badge-public ${cam.approved_for_public ? 'approved' : 'internal'}`;
           pubBadge.innerText = cam.approved_for_public ? 'Public Approved' : 'Internal Only';
+
+          const cloudBadge = document.getElementById(`cloud-live-badge-${cam.id}`);
+          if (cloudBadge) {
+            cloudBadge.className = `badge-cloud-live ${cam.is_streaming_to_cloud ? 'visible' : ''}`;
+          }
 
           document.getElementById(`fps-${cam.id}`).innerText = `${cam.fps || 0} FPS`;
           document.getElementById(`res-${cam.id}`).innerText = cam.resolution || 'Standby';
@@ -1386,24 +1493,32 @@
         document.getElementById("reg-source").value = "0";
         document.getElementById("reg-zone").value = "Operations Center • Sensor Deck";
         document.getElementById("reg-floor").value = "Control Center Level 2";
+        document.getElementById("reg-lat").value = "22.5671";
+        document.getElementById("reg-lon").value = "88.3701";
       } else if (preset === "concourse") {
         document.getElementById("reg-id").value = "cam-concourse-turnstiles";
         document.getElementById("reg-name").value = "Concourse Main Turnstiles";
         document.getElementById("reg-source").value = "rtsp://192.168.1.101:554/live";
         document.getElementById("reg-zone").value = "Terminal Concourse 04 • Gate South";
         document.getElementById("reg-floor").value = "Level 1 - Concourse";
+        document.getElementById("reg-lat").value = "22.5675";
+        document.getElementById("reg-lon").value = "88.3705";
       } else if (preset === "escalator") {
         document.getElementById("reg-id").value = "cam-escalator-choke";
         document.getElementById("reg-name").value = "Platform 1 Escalator Chokepoint";
         document.getElementById("reg-source").value = "rtsp://192.168.1.102:554/live";
         document.getElementById("reg-zone").value = "Platform 1 • Vertical Escalator Flow";
         document.getElementById("reg-floor").value = "Mezzanine Level";
+        document.getElementById("reg-lat").value = "22.5679";
+        document.getElementById("reg-lon").value = "88.3709";
       } else if (preset === "platform") {
         document.getElementById("reg-id").value = "cam-platform-boarding";
         document.getElementById("reg-name").value = "Platform 2 Boarding Hall";
         document.getElementById("reg-source").value = "rtsp://192.168.1.103:554/live";
         document.getElementById("reg-zone").value = "Platform Hub • Track Sector 3";
         document.getElementById("reg-floor").value = "Platform Level";
+        document.getElementById("reg-lat").value = "22.5683";
+        document.getElementById("reg-lon").value = "88.3713";
       }
     }
 
@@ -1454,6 +1569,10 @@
       const floor = document.getElementById("reg-floor").value;
       const x = parseFloat(document.getElementById("reg-x").value) || 0;
       const y = parseFloat(document.getElementById("reg-y").value) || 0;
+      const latRaw = document.getElementById("reg-lat").value.trim();
+      const lonRaw = document.getElementById("reg-lon").value.trim();
+      const lat = latRaw !== "" ? parseFloat(latRaw) : null;
+      const lon = lonRaw !== "" ? parseFloat(lonRaw) : null;
       const active = document.getElementById("reg-active").checked;
       const approved_for_public = document.getElementById("reg-public").checked;
       const show_heatmap = document.getElementById("reg-heatmap").checked;
@@ -1463,9 +1582,20 @@
         name,
         source,
         id: id || undefined,
+        cam_id: id || undefined,
         zone,
-        coordinates: { floor, x, y, z: 0 },
+        lat: Number.isFinite(lat) ? lat : null,
+        lon: Number.isFinite(lon) ? lon : null,
+        coordinates: {
+          floor,
+          x,
+          y,
+          z: 0,
+          latitude: Number.isFinite(lat) ? lat : null,
+          longitude: Number.isFinite(lon) ? lon : null,
+        },
         active,
+        is_public: approved_for_public,
         approved_for_public,
         show_heatmap,
         show_clusters
@@ -1527,8 +1657,10 @@
       document.getElementById("f-fps").innerText = `${cam.fps} FPS`;
       document.getElementById("f-cap-fps").innerText = `${cam.capture_fps} FPS`;
       document.getElementById("f-floor").innerText = cam.coordinates?.floor || 'Level 1';
-      document.getElementById("f-coord").innerText = `X: ${cam.coordinates?.x}, Y: ${cam.coordinates?.y}`;
-      document.getElementById("f-public").innerText = cam.approved_for_public ? 'APPROVED' : 'RESTRICTED (Internal)';
+      document.getElementById("f-coord").innerText = `X: ${cam.coordinates?.x}, Y: ${cam.coordinates?.y}${cam.lat != null && cam.lon != null ? ` (${Number(cam.lat).toFixed(4)}, ${Number(cam.lon).toFixed(4)})` : ''}`;
+      document.getElementById("f-public").innerText = cam.is_streaming_to_cloud
+        ? 'APPROVED • LIVE TO CLOUD'
+        : (cam.approved_for_public ? 'APPROVED' : 'RESTRICTED (Internal)');
     }
 
     function focusTogglePower() {
