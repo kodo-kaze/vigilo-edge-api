@@ -56,7 +56,7 @@ DEFAULT_CLUSTERS = os.getenv("ENABLE_CLUSTERS", "true").lower() == "true"
 STATION_NAME = os.getenv("STATION_NAME", "Central Station Hub • Operations Control Room")
 
 # Geo Server Bridge & Outbound Media Relay Configuration
-GEO_SERVER_WS_URL = os.getenv("GEO_SERVER_WS_URL", "ws://localhost:8001/ws/edge")
+GEO_SERVER_WS_URL = os.getenv("GEO_SERVER_WS_URL", "wss://vigilo-geo-server.onrender.com/ws/edge")
 GEO_MEDIA_PUSH_URL = os.getenv("GEO_MEDIA_PUSH_URL", "rtsp://localhost:8554")
 EDGE_NODE_ID = os.getenv("EDGE_NODE_ID", "central-hub-01")
 EDGE_API_KEY = os.getenv("EDGE_API_KEY", "vigilo-dev-edge-key")
