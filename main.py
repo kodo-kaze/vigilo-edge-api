@@ -637,7 +637,29 @@ def legacy_get_stats(camera_id: Optional[str] = None):
 
     target_node = manager.get_camera(camera_id) if camera_id else manager.get_primary_camera()
     if not target_node:
-        return {"status": "NO_CAMERAS", "active": False}
+        return {
+            "status": "NO_CAMERAS",
+            "active": False,
+            "is_suspended": True,
+            "is_crowd": False,
+            "crowd_probability": 0.0,
+            "people_count": 0,
+            "density_per_megapixel": 0.0,
+            "nearest_neighbor_distance": 0.0,
+            "dense_clusters_count": 0,
+            "gatherings_count": 0,
+            "isolated_count": 0,
+            "heatmap_enabled": True,
+            "clusters_enabled": True,
+            "fps": 0.0,
+            "capture_fps": 0.0,
+            "camera_connected": False,
+            "resolution": "Offline",
+            "camera_source": "No Camera Connected",
+            "zone": DEFAULT_ZONE,
+            "uptime_seconds": 0,
+            "station_overview": manager.get_overview_stats() if manager else {},
+        }
 
     stats = target_node.get_stats()
     # Merge station overview for enhanced frontend insight
