@@ -1,29 +1,29 @@
 [
   {
-    "id": "ph-1-1",
-    "cam_id": "ph-1-1",
-    "name": "ph-1",
+    "id": "c1",
+    "cam_id": "c1",
+    "name": "c1",
     "source": "http://192.168.29.193:8080/video",
-    "zone": "Station Concourse",
-    "lat": 22.883118,
-    "lon": 88.762081,
+    "zone": "nice-place",
+    "lat": 22.5675,
+    "lon": 88.3705,
     "coordinates": {
       "floor": "Level 1 - Concourse",
       "x": 150,
       "y": 300,
       "z": 0,
-      "latitude": 22.883118,
-      "longitude": 88.762081
+      "latitude": 22.5675,
+      "longitude": 88.3705
     },
     "active": true,
     "is_public": true,
     "approved_for_public": true,
     "show_heatmap": false,
-    "show_clusters": false,
+    "show_clusters": true,
     "conf": 0.25,
     "iou": 0.7,
     "stride": 1,
     "smooth": 10,
-    "created_at": "2026-11-25T11:57:21Z"
+    "created_at": "2026-11-25T15:48:32Z"
   }
 ]

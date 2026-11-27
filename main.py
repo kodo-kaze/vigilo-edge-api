@@ -131,7 +131,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files if directory exists
+# Mount static files and modern React admin interface
+ADMIN_DIST_DIR = STATIC_DIR
+ALT_ADMIN_DIST = STATIC_DIR.parent.parent / "vigilo-admin-interface" / "dist"
+if (ALT_ADMIN_DIST / "index.html").exists():
+    ADMIN_DIST_DIR = ALT_ADMIN_DIST
+
+assets_dir = ADMIN_DIST_DIR / "assets"
+if not assets_dir.exists() and (STATIC_DIR / "assets").exists():
+    assets_dir = STATIC_DIR / "assets"
+
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -143,9 +155,11 @@ if STATIC_DIR.exists():
 @app.get("/")
 def serve_index():
     """
-    Serves the lightweight local control room admin panel for testing and operations.
+    Serves the modern React station control room admin panel.
     """
-    index_file = STATIC_DIR / "index.html"
+    index_file = ADMIN_DIST_DIR / "index.html"
+    if not index_file.exists():
+        index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
     return {
@@ -160,10 +174,7 @@ def serve_index():
 @app.get("/admin")
 def serve_admin():
     """Direct route for the control center admin panel."""
-    index_file = STATIC_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return JSONResponse(status_code=404, content={"error": "Admin template not found"})
+    return serve_index()
 
 
 # =============================================================================
