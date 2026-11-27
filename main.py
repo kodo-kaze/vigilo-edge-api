@@ -63,6 +63,7 @@ except ImportError:
     from backend.cloud_bridge import EdgeCloudBridge
 
 # Global Central Multi-Camera Manager & Cloud Bridge instances
+SERVER_START_TIME: float = time.time()
 manager: Optional[CameraManager] = None
 cloud_relay: Optional[CloudStreamRelay] = None
 cloud_bridge: Optional[EdgeCloudBridge] = None
@@ -232,6 +233,95 @@ def get_cloud_bridge_status():
             "active_cloud_streams": [],
         }
     return cloud_bridge.get_status()
+
+
+@app.get("/api/diagnostics")
+def get_system_diagnostics():
+    """
+    Comprehensive Server & Cloud Telemetry Diagnostics:
+    - Host runtime & process metrics (uptime, memory, platform, python/torch/cv2 info)
+    - Complete camera capture telemetry matrix (all features, fps, resolutions, algorithms)
+    - Live Geo Server outbound sync state (WS status, active outbound stream pushers, last error)
+    - Exact real-time Geo Server payloads (live registration payload & live telemetry_batch payload)
+    """
+    if manager is None:
+        return JSONResponse(status_code=503, content={"error": "Edge Brain Manager not initialized"})
+
+    import platform
+    import sys
+    import cv2
+    import os
+
+    try:
+        import resource
+        mem_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except Exception:
+        mem_mb = None
+
+    try:
+        import torch
+        device_info = "CPU (Optimized)"
+        if torch.cuda.is_available():
+            try:
+                device_info = f"GPU: {torch.cuda.get_device_name(0)}"
+            except Exception:
+                device_info = "CUDA GPU"
+    except Exception:
+        device_info = "CPU"
+
+    overview = manager.get_overview_stats()
+    cloud_status = cloud_bridge.get_status() if cloud_bridge else {
+        "status": "Disabled",
+        "connected": False,
+        "edge_node_id": EDGE_NODE_ID,
+        "geo_server_ws_url": GEO_SERVER_WS_URL,
+        "active_cloud_streams": [],
+        "last_connected_at": None,
+        "last_error": None,
+        "reconnect_attempt": 0,
+    }
+
+    # Build the exact outbound payloads dispatched to the Geo Server
+    cloud_registration_payload = {
+        "type": "register_node",
+        "edge_node_id": EDGE_NODE_ID,
+        "station_name": STATION_NAME,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "cameras": manager.get_cloud_registrations(),
+    }
+
+    cloud_telemetry_batch_payload = {
+        "type": "telemetry_batch",
+        "edge_node_id": EDGE_NODE_ID,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "cameras": manager.get_cloud_telemetry_batch(),
+    }
+
+    return {
+        "server": {
+            "node_id": EDGE_NODE_ID,
+            "station_name": STATION_NAME,
+            "status": "OPERATIONAL",
+            "uptime_seconds": int(time.time() - SERVER_START_TIME),
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "opencv_version": cv2.__version__,
+            "torch_device": device_info,
+            "memory_usage_mb": mem_mb,
+            "cpu_count": os.cpu_count() or 1,
+            "detector_conf": DEFAULT_CONF,
+            "detector_iou": DEFAULT_IOU,
+            "inference_stride": DEFAULT_STRIDE,
+        },
+        "cloud_sync": {
+            **cloud_status,
+            "telemetry_interval_sec": TELEMETRY_PUSH_INTERVAL,
+            "live_outbound_batch": cloud_telemetry_batch_payload,
+            "live_node_registration": cloud_registration_payload,
+        },
+        "overview": overview,
+        "cameras": manager.list_cameras(),
+    }
 
 
 # =============================================================================
