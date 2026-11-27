@@ -628,6 +628,7 @@ class CloudStreamPusher:
         self._proc_lock = threading.Lock()
         self._proc: Optional[subprocess.Popen] = None
         self._fallback_frame = _make_cloud_waiting_frame(self.width, self.height, self.cam_id)
+        self._last_unreachable_log: float = 0.0
         self._thread = threading.Thread(target=self._push_loop, daemon=True, name=f"cloud-relay-{self.cam_id}")
 
     def start(self):
@@ -663,10 +664,33 @@ class CloudStreamPusher:
             ])
         return cmd
 
+    def _is_target_reachable(self) -> bool:
+        try:
+            import socket
+            p = urlparse(self.target_url)
+            host = p.hostname or "127.0.0.1"
+            port = p.port or 8554
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.4)
+                return s.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+
     def _spawn_process(self) -> Optional[subprocess.Popen]:
         if shutil.which("ffmpeg") is None:
             print(f"[CloudStreamRelay] ffmpeg binary not found; cannot push stream for {self.cam_id}")
             return None
+
+        if not self._is_target_reachable():
+            now = time.time()
+            if now - self._last_unreachable_log > 30.0:
+                print(
+                    f"[CloudStreamRelay] Outbound media server at {self.target_url} is not running "
+                    f"(frames continue streaming securely via reverse WebSocket). Retrying in 10s..."
+                )
+                self._last_unreachable_log = now
+            return None
+
         cmd = self._build_ffmpeg_cmd()
         try:
             proc = subprocess.Popen(
@@ -731,7 +755,8 @@ class CloudStreamPusher:
                     self._terminate_process()
                     proc = self._spawn_process()
                     if proc is None:
-                        if self._stop_event.wait(2.0):
+                        sleep_time = 10.0 if not self._is_target_reachable() else 2.0
+                        if self._stop_event.wait(sleep_time):
                             break
                         continue
 
@@ -752,10 +777,13 @@ class CloudStreamPusher:
                         proc.stdin.flush()
                 except (BrokenPipeError, OSError, ValueError) as exc:
                     if not self._stop_event.is_set():
-                        print(f"[CloudStreamRelay] FFmpeg pipe interrupted for {self.cam_id}: {exc}")
+                        now = time.time()
+                        if now - self._last_unreachable_log > 30.0:
+                            print(f"[CloudStreamRelay] Outbound media connection dropped for {self.cam_id} ({exc}); backing off 5s...")
+                            self._last_unreachable_log = now
                     self._terminate_process()
                     proc = None
-                    if self._stop_event.wait(1.0):
+                    if self._stop_event.wait(5.0):
                         break
                     continue
 
