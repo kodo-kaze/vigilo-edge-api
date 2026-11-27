@@ -32,15 +32,15 @@
     "name": "ph-1",
     "source": "http://192.168.29.193:8080/video",
     "zone": "bimbok's place",
-    "lat": null,
-    "lon": null,
+    "lat": 22.5675,
+    "lon": 88.3705,
     "coordinates": {
       "floor": "Level 1 - Concourse",
       "x": 150,
       "y": 300,
       "z": 0.0,
-      "latitude": null,
-      "longitude": null
+      "latitude": 22.5675,
+      "longitude": 88.3705
     },
     "active": true,
     "is_public": true,
@@ -52,32 +52,5 @@
     "stride": 1,
     "smooth": 10,
     "created_at": "2026-11-27T13:52:45Z"
-  },
-  {
-    "id": "cam-phone-1",
-    "cam_id": "cam-phone-1",
-    "name": "Phone Camera Stream",
-    "source": "http://192.168.29.193:8080/video",
-    "zone": "Station Concourse",
-    "lat": null,
-    "lon": null,
-    "coordinates": {
-      "floor": "Level 1 - Concourse",
-      "x": 150,
-      "y": 300,
-      "z": 0.0,
-      "latitude": null,
-      "longitude": null
-    },
-    "active": true,
-    "is_public": true,
-    "approved_for_public": true,
-    "show_heatmap": true,
-    "show_clusters": true,
-    "conf": 0.25,
-    "iou": 0.7,
-    "stride": 1,
-    "smooth": 10,
-    "created_at": "2026-11-27T13:56:01Z"
   }
 ]
