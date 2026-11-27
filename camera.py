@@ -268,12 +268,18 @@ class CameraNode:
             "created_at": self.created_at,
         }
 
-        # Standby placeholder cache
+        # Standby & Offline placeholder cache
         self._cached_standby_frame = generate_placeholder_frame(
             title=f"{self.name}",
             subtitle=f"Zone: {self.zone} • {self.coordinates.get('floor', '')} (X:{self.coordinates.get('x', '-')}, Y:{self.coordinates.get('y', '-')})",
             status="STANDBY",
             badge_color=(120, 140, 160),
+        )
+        self._cached_offline_frame = generate_placeholder_frame(
+            title=f"{self.name}",
+            subtitle=f"Zone: {self.zone} • Waiting for stream connection...",
+            status="OFFLINE",
+            badge_color=(70, 70, 200),
         )
 
         # Start dedicated inference & annotation thread
@@ -410,13 +416,14 @@ class CameraNode:
                     })
 
     def get_latest_frame(self) -> Optional[bytes]:
-        """Returns the latest annotated JPEG frame or a standby placeholder if suspended."""
+        """Returns the latest annotated JPEG frame or a placeholder if suspended/offline."""
         if not self.active:
             return self._cached_standby_frame
         with self.lock:
-            if self.latest_jpeg is not None:
+            is_conn = bool(self.stats.get("camera_connected", False))
+            if self.latest_jpeg is not None and is_conn:
                 return self.latest_jpeg
-            return self._cached_standby_frame
+            return self._cached_offline_frame if not is_conn else self._cached_standby_frame
 
     def get_latest_annotated_frame(self) -> Optional[np.ndarray]:
         """Returns a copy of the latest processed BGR frame for outbound cloud streaming."""

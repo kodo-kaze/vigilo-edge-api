@@ -13,6 +13,7 @@ import numpy as np
 
 # Optimize OpenCV RTSP streaming: prioritize TCP to prevent packet fragmentation and set 5s socket timeout
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|timeout;5000000")
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "8")
 
 try:
     from config import (
@@ -98,12 +99,18 @@ def parse_camera_source(source) -> Dict[str, Any]:
             scheme = parsed.scheme.lower()
             ip = parsed.hostname or "remote-camera"
             port = parsed.port or (554 if scheme == "rtsp" else (443 if scheme == "https" else 80))
+            path = parsed.path or ""
+
+            if scheme in ("http", "https") and port == 8080 and (not path or path == "/"):
+                path = "/video"
+                s = f"{scheme}://{parsed.netloc}/video" if parsed.netloc else f"{scheme}://{ip}:{port}/video"
+
             masked_netloc = ip
             if parsed.username:
                 masked_netloc = f"{parsed.username}:••••••@{ip}:{port}"
             elif parsed.port:
                 masked_netloc = f"{ip}:{port}"
-            masked_url = f"{scheme}://{masked_netloc}{parsed.path}"
+            masked_url = f"{scheme}://{masked_netloc}{path}"
             return {
                 "type": "ip_camera",
                 "index": None,
@@ -207,14 +214,16 @@ class RTSPCameraStream:
 
     def _update_loop(self):
         last_frame_time = time.time()
+        consecutive_failures = 0
         while self.running:
             if self.suspended:
+                consecutive_failures = 0
                 time.sleep(0.1)
                 continue
 
             if self.cap is None or not self.cap.isOpened():
                 self.connected = False
-                time.sleep(0.5)
+                time.sleep(1.0)
                 if not self.suspended and self.running:
                     self._open_capture()
                 continue
@@ -222,6 +231,7 @@ class RTSPCameraStream:
             ret, frame = self.cap.read()
             now = time.time()
             if ret and frame is not None:
+                consecutive_failures = 0
                 self.connected = True
                 with self.lock:
                     self.latest_frame = frame
@@ -233,8 +243,14 @@ class RTSPCameraStream:
                     # Loop sample video files smoothly
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 else:
+                    consecutive_failures += 1
                     self.connected = False
-                    time.sleep(0.5)
+                    if consecutive_failures >= 3:
+                        self._release_capture()
+                        consecutive_failures = 0
+                        time.sleep(2.0)
+                    else:
+                        time.sleep(0.3)
 
             # High-performance pacing
             time.sleep(0.005)
